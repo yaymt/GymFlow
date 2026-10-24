@@ -1,0 +1,33 @@
+rules_version = '2';
+
+// GymFlow security rules
+// Each signed-in user can read and write ONLY their own data under /users/{their uid}.
+// Paste this into: Firebase console → Firestore Database → Rules → Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // profile document
+    match /users/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && request.resource.data.size() < 100;
+
+      // plans, workouts, bodyweight, measurements, exercises
+      match /{collection}/{docId} {
+        allow read, delete: if isOwner(uid)
+          && collection in ['plans', 'workouts', 'bodyweight', 'measurements', 'exercises'];
+        allow create, update: if isOwner(uid)
+          && collection in ['plans', 'workouts', 'bodyweight', 'measurements', 'exercises']
+          && request.resource.data.id == docId;
+      }
+    }
+
+    // everything else is closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

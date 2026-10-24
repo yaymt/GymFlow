@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>جِم فلو</title>
+  <meta name="description" content="نظّم تمارينك في النادي: جداول، تسجيل أوزان، أرقام قياسية، ومؤقت راحة." />
+  <meta name="theme-color" content="#16212A" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&family=Cairo:wght@600;700;800;900&family=El+Messiri:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script>
+    // apply saved theme/lang before first paint (avoids a flash)
+    try {
+      var p = JSON.parse(localStorage.getItem('gymflow:prefs') || '{}');
+      var th = p.theme || 'dark';
+      if (th === 'auto') th = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = th;
+      document.documentElement.dataset.style = p.style || 'classic';
+      if (p.lang === 'en') { document.documentElement.lang = 'en'; document.documentElement.dir = 'ltr'; }
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div class="splash">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="7" width="5" height="18" rx="1.6" fill="#E0473C"/><rect x="9" y="10" width="3.5" height="12" rx="1.2" fill="#F2B705"/><rect x="12.5" y="14.6" width="7" height="2.8" rx="1" fill="#93A2AD"/><rect x="19.5" y="10" width="3.5" height="12" rx="1.2" fill="#2F80D8"/><rect x="24" y="7" width="5" height="18" rx="1.6" fill="#33A061"/></svg>
+    </div>
+  </div>
+  <noscript><p style="padding:2rem;text-align:center">يحتاج الموقع تفعيل JavaScript · JavaScript is required.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
