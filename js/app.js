@@ -1,10 +1,10 @@
 import { createStore, isCloud, uid, authErrorKey } from './store.js';
-import { EXERCISES, TEMPLATES, MUSCLES, MEASURE_KEYS } from './data.js';
+import { EXERCISES, TEMPLATES, MUSCLES, MEASURE_KEYS, GROUPS, LEG_MUSCLES, CARDIO_EXTRAS, inGroup } from './data.js';
 import { T } from './i18n.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 /* =========================================================
    State
@@ -76,7 +76,35 @@ const getEx = (id) => BUILTIN[id] || S.exercises.find((e) => e.id === id) || { i
 const exName = (e) => (typeof e === 'string' ? exName(getEx(e)) : e.builtin ? (lang() === 'ar' ? e.ar : e.en) : (e.name || (lang() === 'ar' ? e.ar : e.en)));
 const allExercises = () => [...EXERCISES, ...S.exercises.map((e) => ({ ...e, builtin: false }))];
 const exType = (id) => getEx(id).type || 'weight';
-const isLoad = (type) => type === 'weight' || type === 'bodyweight';
+const isLoad = (type) => type === 'weight' || type === 'bodyweight' || type === 'carry';
+
+// How each exercise type is logged. 'cardio' has no sets/reps/rest: minutes (r) + distance (w) + one optional extra (x).
+const cardioDef = (exId) => { const e = getEx(exId); return { dist: e.dist === undefined ? 'km' : e.dist, extra: e.extra || null }; };
+const distLabel = (d) => (d === 'm' ? t('m_short') : d === 'floors' ? t('floors') : t('km'));
+const extraName = (k) => (CARDIO_EXTRAS[k] ? CARDIO_EXTRAS[k][lang()] : k);
+const extraLabel = (k) => extraName(k) + (CARDIO_EXTRAS[k]?.unit ? ` ${CARDIO_EXTRAS[k].unit}` : '');
+const extraText = (k, v) => `${extraName(k)} ${fmtNum(v)}${CARDIO_EXTRAS[k]?.unit || ''}`;
+const colsFor = (exId) => {
+  const type = exType(exId);
+  if (type === 'weight') return [{ f: 'w', l: uLabel() }, { f: 'r', l: t('reps') }];
+  if (type === 'bodyweight') return [{ f: 'w', l: '+' + uLabel() }, { f: 'r', l: t('reps') }];
+  if (type === 'time') return [{ f: 'r', l: t('sec') }];
+  if (type === 'carry') return [{ f: 'w', l: uLabel() }, { f: 'r', l: t('m_short') }];
+  const c = cardioDef(exId);
+  return [{ f: 'r', l: t('min') }, ...(c.dist ? [{ f: 'w', l: distLabel(c.dist) }] : []), ...(c.extra ? [{ f: 'x', l: extraLabel(c.extra) }] : [])];
+};
+// What a plan item asks for, e.g. "4×8", "30 min", "3×45s"
+const targetText = (it) => {
+  const type = exType(it.exId), reps = esc(it.reps || '');
+  if (type === 'cardio') return reps ? `${reps} ${t('min_short')}` : '';
+  if (type === 'time') return `${it.sets}×${reps}${t('sec_short')}`;
+  if (type === 'carry') return `${it.sets}×${reps}${t('m_short')}`;
+  return `${it.sets}×${reps}`;
+};
+const itemDefaults = (exId) => {
+  const type = exType(exId);
+  return type === 'cardio' ? { sets: 1, reps: '30' } : type === 'time' ? { sets: 3, reps: '45' } : type === 'carry' ? { sets: 3, reps: '30' } : type === 'bodyweight' ? { sets: 3, reps: '10-15' } : { sets: 3, reps: '8-12' };
+};
 
 const e1rm = (w, r) => (!w || !r ? 0 : r === 1 ? w : w * (1 + r / 30));
 
@@ -87,6 +115,19 @@ const sortedWorkouts = () => [...S.workouts].sort((a, b) => (b.start || 0) - (a.
 const workoutVolume = (w) => (w.exercises || []).reduce((sum, e) => exType(e.exId) === 'weight'
   ? sum + (e.sets || []).reduce((s, x) => s + (x.w || 0) * (x.r || 0), 0) : sum, 0);
 const workoutSets = (w) => (w.exercises || []).reduce((s, e) => s + (e.sets || []).length, 0);
+
+// Best-of stats for types that are not weight × reps
+function otherCells(type, b, exId) {
+  const cell = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
+  if (type === 'cardio') {
+    const c = cardioDef(exId);
+    return cell(t('met_mins'), `${b.reps} ${t('min_short')}`) + (c.dist ? cell(t('met_dist'), `${fmtNum(b.weight)} ${distLabel(c.dist)}`) : '');
+  }
+  if (type === 'carry') return cell(t('heaviest'), fmtW(b.weight)) + cell(t('met_meters'), `${b.reps} ${t('m_short')}`);
+  if (type === 'time') return cell(t('met_secs'), `${b.reps} ${t('sec_short')}`);
+  return cell(t('most_reps'), b.reps);
+}
+const otherGrid = (type, b, exId) => `<div class="pr-grid"><div><small>${t('sessions')}</small><b>${b.sessions}</b></div>${otherCells(type, b, exId)}</div>`;
 
 function bestsFor(exId, excludeId, before = Infinity) {
   const b = { weight: 0, e1rm: 0, reps: 0, vol: 0, sessions: 0, last: null };
@@ -472,7 +513,7 @@ VIEWS.home = () => {
     if (todayDay) {
       todayHtml = card(`<div class="card-head"><h3>${t('today')}: ${esc(todayDay.name)}</h3><a class="muted small" href="#/plan/${plan.id}">${esc(plan.name)}</a></div>
         ${trainedToday ? `<p class="ok-line">${icon('check')} ${t('done_today')}</p>` : ''}
-        <ol class="today-list">${todayDay.items.map((it) => `<li><span>${esc(exName(it.exId))}</span><small>${ltr(`${it.sets}×${esc(it.reps || '')}`)}</small></li>`).join('') || `<li class="muted">${t('day_empty')}</li>`}</ol>
+        <ol class="today-list">${todayDay.items.map((it) => `<li><span>${esc(exName(it.exId))}</span><small>${ltr(targetText(it))}</small></li>`).join('') || `<li class="muted">${t('day_empty')}</li>`}</ol>
         <div class="row-actions start">
           <button class="btn btn-primary" data-act="start-day" data-plan="${plan.id}" data-day="${todayDay.id}">${icon('play')}${t('start_workout')}</button>
           <button class="btn btn-ghost" data-act="start-other">${t('other_day')}</button>
@@ -569,13 +610,17 @@ VIEWS.plan = (r) => {
         </div>
       </div>
       <div class="items">
-        ${d.items.length ? `<div class="item-head"><span>${t('exercise')}</span><span>${t('sets')}</span><span>${t('reps')}</span><span>${t('rest_s')}</span><span></span></div>` : ''}
+        ${d.items.length ? `<div class="item-head"><span>${t('exercise')}</span><span>${t('sets')}</span><span>${t('reps_time')}</span><span>${t('rest_s')}</span><span></span></div>` : ''}
         ${d.items.map((it, ii) => `
         <div class="item-row">
-          <button class="item-name" data-act="item-menu" data-d="${di}" data-i="${ii}">${esc(exName(it.exId))}<small>${t('m_' + getEx(it.exId).muscle)}</small></button>
-          <input class="input input-num" inputmode="numeric" value="${esc(it.sets)}" data-pe="it-sets" data-d="${di}" data-i="${ii}" aria-label="${t('sets')}"/>
-          <input class="input input-num" value="${esc(it.reps)}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${t('reps')}"/>
-          <input class="input input-num" inputmode="numeric" value="${esc(it.rest ?? '')}" placeholder="${S.profile.rest || 90}" data-pe="it-rest" data-d="${di}" data-i="${ii}" aria-label="${t('rest_s')}"/>
+          <button class="item-name" data-act="item-menu" data-d="${di}" data-i="${ii}">${esc(exName(it.exId))}<small>${t('m_' + getEx(it.exId).muscle)}${exType(it.exId) === 'cardio' ? ` · ${t('ty_cardio_short')}` : ''}</small></button>
+          ${exType(it.exId) === 'cardio'
+            ? `<span class="item-na">–</span>
+          <input class="input input-num" inputmode="numeric" value="${esc(it.reps)}" placeholder="${t('min')}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${t('min')}"/>
+          <span class="item-na">–</span>`
+            : `<input class="input input-num" inputmode="numeric" value="${esc(it.sets)}" data-pe="it-sets" data-d="${di}" data-i="${ii}" aria-label="${t('sets')}"/>
+          <input class="input input-num" value="${esc(it.reps)}" placeholder="${exType(it.exId) === 'time' ? t('sec') : exType(it.exId) === 'carry' ? t('m_short') : ''}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${t('reps')}"/>
+          <input class="input input-num" inputmode="numeric" value="${esc(it.rest ?? '')}" placeholder="${S.profile.rest || 90}" data-pe="it-rest" data-d="${di}" data-i="${ii}" aria-label="${t('rest_s')}"/>`}
           <button class="icon-btn sm" data-act="item-menu" data-d="${di}" data-i="${ii}" aria-label="${t('more')}">${icon('more')}</button>
         </div>`).join('')}
       </div>
@@ -604,21 +649,24 @@ VIEWS.plan = (r) => {
 };
 
 /* ---------- LOG (active workout) ---------- */
-const COLS = {
-  weight: () => [{ f: 'w', l: uLabel() }, { f: 'r', l: t('reps') }],
-  bodyweight: () => [{ f: 'w', l: '+' + uLabel() }, { f: 'r', l: t('reps') }],
-  time: () => [{ f: 'r', l: t('sec') }],
-  cardio: () => [{ f: 'w', l: t('km') }, { f: 'r', l: t('min') }],
-};
-
 // Keep "85 × 8", "3×8", "+15" in reading order inside Arabic (RTL) text
 const ltr = (s) => `<bdi dir="ltr">${s}</bdi>`;
 
-function prevText(type, s, aUnit) {
+// Average speed (km/h) for a cardio set measured in km
+const cardioSpeed = (s, exId) => (cardioDef(exId).dist === 'km' && s && s.r > 0 && s.w > 0 ? s.w / (s.r / 60) : null);
+
+function prevText(type, s, aUnit, exId) {
   if (!s) return '–';
   const w = isLoad(type) ? (aUnit === 'lb' ? s.w * LB : s.w) : s.w;
   if (type === 'time') return `${s.r || 0}${t('sec_short')}`;
-  if (type === 'cardio') return ltr(`${fmtNum(s.w || 0)}${t('km')} · ${s.r || 0}${t('min_short')}`);
+  if (type === 'carry') return ltr(`${fmtNum(w || 0)} × ${s.r || 0}${t('m_short')}`);
+  if (type === 'cardio') {
+    const c = cardioDef(exId);
+    const parts = [`${s.r || 0} ${t('min_short')}`];
+    if (c.dist && s.w) parts.push(`${fmtNum(s.w)} ${distLabel(c.dist)}`);
+    if (c.extra && s.x != null && s.x !== '') parts.push(extraText(c.extra, s.x));
+    return parts.join(' · ');
+  }
   if (type === 'bodyweight') return ltr(`${s.w ? '+' + fmtNum(w) + ' × ' : ''}${s.r || 0}`);
   return ltr(`${fmtNum(w || 0)} × ${s.r || 0}`);
 }
@@ -629,29 +677,39 @@ VIEWS.log = () => {
   const before = A.start;
   const blocks = A.exercises.map((e, i) => {
     const type = exType(e.exId);
-    const cols = COLS[type]();
+    const cardio = type === 'cardio';
+    const cols = colsFor(e.exId);
     const prev = lastSetsFor(e.exId, A.editingId, before) || [];
     const rows = e.sets.map((s, j) => {
       const p = prev[j] || prev[prev.length - 1];
       const ph = (f) => { if (!p) return ''; const v = p[f]; if (v == null) return ''; return f === 'w' && isLoad(type) ? fmtNum(A.unit === 'lb' ? v * LB : v) : fmtNum(v); };
-      return `<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length}" data-i="${i}" data-j="${j}">
-        <button class="setno ${s.kind === 'warm' ? 'warm' : ''}" data-act="set-kind" data-i="${i}" data-j="${j}" aria-label="${t('set_type')}">${s.kind === 'warm' ? 'W' : j + 1 - e.sets.slice(0, j).filter((x) => x.kind === 'warm').length}</button>
-        <span class="prev">${prev[j] ? prevText(type, prev[j], A.unit) : '–'}</span>
+      // only weight exercises have warm-up sets; other types just number their rows
+      const no = type === 'weight'
+        ? `<button class="setno ${s.kind === 'warm' ? 'warm' : ''}" data-act="set-kind" data-i="${i}" data-j="${j}" aria-label="${t('set_type')}">${s.kind === 'warm' ? 'W' : j + 1 - e.sets.slice(0, j).filter((x) => x.kind === 'warm').length}</button>`
+        : `<span class="setno">${j + 1}</span>`;
+      return `<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length} ${cardio ? 'nopre' : ''}" data-i="${i}" data-j="${j}">
+        ${no}
+        ${cardio ? '' : `<span class="prev">${prev[j] ? prevText(type, prev[j], A.unit, e.exId) : '–'}</span>`}
         ${cols.map((c) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${c.f}" data-i="${i}" data-j="${j}" value="${esc(s[c.f] ?? '')}" placeholder="${esc(ph(c.f))}" aria-label="${esc(c.l)}"/>`).join('')}
         <button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button>
       </div>`;
     }).join('');
     const ex = getEx(e.exId);
+    const unitSfx = type === 'cardio' ? t('min_short') : type === 'time' ? t('sec_short') : type === 'carry' ? t('m_short') : '';
+    const restInfo = cardio ? '' : ` · ${icon('timer')}${e.rest || S.profile.rest || 90}${t('sec_short')}`;
+    const lastLine = cardio && prev.length
+      ? `<p class="prev-line muted small">${t('last_time')}: ${prev.map((x) => prevText(type, x, A.unit, e.exId)).join(' + ')}${cardioSpeed(prev[0], e.exId) ? ` · ${fmtNum(cardioSpeed(prev[0], e.exId))} ${t('kmh')}` : ''}</p>` : '';
     return `<section class="exblock" data-i="${i}">
       <div class="exhead">
-        <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${t('m_' + ex.muscle)}${e.target ? ` · ${t('target')} ${esc(e.target)}` : ''} · ${icon('timer')}${e.rest || S.profile.rest || 90}${t('sec_short')}</small></button>
+        <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${t('m_' + ex.muscle)}${e.target ? ` · ${t('target')} ${esc(e.target)}${unitSfx}` : ''}${restInfo}</small></button>
         <button class="icon-btn sm" data-act="ex-menu" data-i="${i}" aria-label="${t('more')}">${icon('more')}</button>
       </div>
-      <div class="setrow head cols-${cols.length}"><span>#</span><span>${t('previous')}</span>${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>
+      ${lastLine}
+      <div class="setrow head cols-${cols.length} ${cardio ? 'nopre' : ''}"><span>#</span>${cardio ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>
       ${rows}
       <div class="exfoot">
-        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${t('add_set')}</button>
-        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${t('remove_set')}</button>` : ''}
+        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${cardio ? t('add_interval') : t('add_set')}</button>
+        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${cardio ? t('remove_interval') : t('remove_set')}</button>` : ''}
         <input class="input note-in" data-note="${i}" value="${esc(e.note || '')}" placeholder="${t('note_ph')}"/>
       </div>
     </section>`;
@@ -723,13 +781,13 @@ function startWorkout({ planId, dayId, fromWorkout, title } = {}) {
       const d = p && p.days.find((x) => x.id === dayId);
       if (d) {
         A.title = d.name;
-        A.exercises = d.items.map((it) => ({ exId: it.exId, target: it.reps, rest: num(it.rest) || null, note: '', sets: Array.from({ length: Math.max(1, num(it.sets) || 3) }, () => ({ w: '', r: '', done: false })) }));
+        A.exercises = d.items.map((it) => ({ exId: it.exId, target: it.reps, rest: num(it.rest) || null, note: '', sets: Array.from({ length: exType(it.exId) === 'cardio' ? 1 : Math.max(1, num(it.sets) || 3) }, () => ({ w: '', r: '', x: '', done: false })) }));
       }
     } else if (fromWorkout) {
       const w = S.workouts.find((x) => x.id === fromWorkout);
       if (w) {
         A.title = w.title || '';
-        A.exercises = w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: '', sets: e.sets.map((s) => ({ w: '', r: '', done: false, kind: s.kind })) }));
+        A.exercises = w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: '', sets: e.sets.map((s) => ({ w: '', r: '', x: '', done: false, kind: s.kind })) }));
       }
     }
     if (!A.title) A.title = t('workout') + ' ' + fmtDate(Date.now(), { day: 'numeric', month: 'short' });
@@ -750,7 +808,7 @@ function editWorkout(id) {
     const conv = (v, type) => (v == null ? '' : isLoad(type) ? String(r1(u === 'lb' ? v * LB : v)) : String(v));
     S.active = {
       id: w.id, editingId: w.id, start: w.start, end: w.end, unit: u, title: w.title || '', planId: w.planId || null, dayId: w.dayId || null, notes: w.notes || '',
-      exercises: w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets: e.sets.map((s) => ({ w: conv(s.w, exType(e.exId)), r: s.r == null ? '' : String(s.r), done: true, kind: s.kind })) })),
+      exercises: w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets: e.sets.map((s) => ({ w: conv(s.w, exType(e.exId)), r: s.r == null ? '' : String(s.r), x: s.x == null ? '' : String(s.x), done: true, kind: s.kind })) })),
     };
     saveActive(true); go('log');
   };
@@ -767,14 +825,16 @@ async function finishWorkout() {
     const sets = e.sets.filter((s) => {
       const r = num(s.r), w = num(s.w);
       if (type === 'weight') return s.done ? (r != null) : (r != null && w != null);
-      if (type === 'cardio') return s.done ? (r != null || w != null) : (r != null && w != null);
+      if (type === 'cardio') return r != null || (s.done && w != null);
       return r != null;
     }).map((s) => {
       const out = { r: num(s.r) ?? 0 };
       const w = num(s.w);
       if (w != null) out.w = isLoad(type) ? fromDisp(w, A.unit) : w;
-      else if (type === 'weight') out.w = 0;
-      if (s.kind === 'warm') out.kind = 'warm';
+      else if (type === 'weight' || type === 'carry') out.w = 0;
+      const x = num(s.x);
+      if (x != null && type === 'cardio') out.x = x;
+      if (s.kind === 'warm' && type === 'weight') out.kind = 'warm';
       return out;
     });
     return { exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets };
@@ -895,7 +955,7 @@ VIEWS.workout = (r) => {
     const best = type === 'weight' ? Math.max(0, ...e.sets.map((s) => e1rm(s.w || 0, s.r || 0))) : 0;
     return `<section class="card ex-detail">
       <div class="card-head"><h3><a href="#/progress/${encodeURIComponent(e.exId)}">${esc(exName(e.exId))}</a></h3>${prMap[e.exId] ? `<span class="badge-pr">${icon('trophy')}${t('pr_' + prMap[e.exId].kind)}</span>` : ''}</div>
-      <ol class="set-list">${e.sets.map((s, j) => `<li class="${s.kind === 'warm' ? 'warm' : ''}"><span>${s.kind === 'warm' ? 'W' : j + 1}</span><b>${prevText(type, s, unit())}</b>${type === 'weight' && s.w ? `<small>1RM≈${fmtW(e1rm(s.w, s.r))}</small>` : ''}</li>`).join('')}</ol>
+      <ol class="set-list">${e.sets.map((s, j) => `<li class="${s.kind === 'warm' ? 'warm' : ''}"><span>${s.kind === 'warm' && type === 'weight' ? 'W' : j + 1}</span><b>${prevText(type, s, unit(), e.exId)}</b>${type === 'weight' && s.w ? `<small>1RM≈${fmtW(e1rm(s.w, s.r))}</small>` : ''}${type === 'cardio' && cardioSpeed(s, e.exId) ? `<small>${fmtNum(cardioSpeed(s, e.exId))} ${t('kmh')}</small>` : ''}</li>`).join('')}</ol>
       ${best ? `<p class="muted small">${t('best_e1rm')}: ${fmtW(best)}</p>` : ''}
       ${e.note ? `<p class="note">${icon('note')}${esc(e.note)}</p>` : ''}
     </section>`;
@@ -948,16 +1008,18 @@ VIEWS.progress = (r) => {
       vol: sets.reduce((a, s) => a + (s.w || 0) * (s.r || 0), 0),
       reps: Math.max(0, ...sets.map((s) => s.r || 0)),
       dist: Math.max(0, ...sets.map((s) => s.w || 0)),
+      speed: Math.max(0, ...sets.map((s) => cardioSpeed(s, sel) || 0)),
       sets: e.sets,
     };
   }).filter(Boolean);
 
   const addedLoad = sessions.some((x) => x.weight > 0);
-  const metrics = type === 'weight' ? ['e1rm', 'weight', 'vol', 'reps'] : type === 'cardio' ? ['dist', 'reps'] : type === 'bodyweight' && addedLoad ? ['reps', 'weight'] : ['reps'];
+  const cdef = type === 'cardio' ? cardioDef(sel) : null;
+  const metrics = type === 'weight' ? ['e1rm', 'weight', 'vol', 'reps'] : type === 'cardio' ? [...(cdef.dist ? ['dist'] : []), 'reps', ...(cdef.dist === 'km' ? ['speed'] : [])] : type === 'carry' ? ['weight', 'reps'] : type === 'bodyweight' && addedLoad ? ['reps', 'weight'] : ['reps'];
   const m = metrics.includes(metric) ? metric : metrics[0];
   const loadMetric = ['e1rm', 'weight', 'vol'].includes(m);
   const pts = sessions.map((s) => ({ x: s.x, y: loadMetric ? toDisp(s[m]) : s[m] }));
-  const mLabel = (k) => t(type === 'time' && k === 'reps' ? 'met_secs' : type === 'cardio' && k === 'reps' ? 'met_mins' : 'met_' + k);
+  const mLabel = (k) => t(type === 'time' && k === 'reps' ? 'met_secs' : type === 'cardio' && k === 'reps' ? 'met_mins' : type === 'carry' && k === 'reps' ? 'met_meters' : 'met_' + k);
   const b = bestsFor(sel);
 
   const weeks = weekCounts(12);
@@ -981,10 +1043,10 @@ VIEWS.progress = (r) => {
           <div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>
           <div><small>${t('most_reps')}</small><b>${b.reps}</b></div>
           <div><small>${t('best_volume')}</small><b>${fmtVol(b.vol)}</b></div>
-        </div>` : `<div class="pr-grid"><div><small>${t('sessions')}</small><b>${b.sessions}</b></div><div><small>${mLabel('reps')}</small><b>${b.reps}</b></div></div>`}
+        </div>` : otherGrid(type, b, sel)}
         <details class="sessions">
           <summary>${t('session_log')} (${sessions.length})</summary>
-          <ul>${[...sessions].reverse().slice(0, 30).map((s) => `<li><a href="#/workout/${s.wid}"><span>${fmtDate(s.x)}</span><small>${s.sets.map((x) => prevText(type, x, unit())).join(' · ')}</small></a></li>`).join('')}</ul>
+          <ul>${[...sessions].reverse().slice(0, 30).map((s) => `<li><a href="#/workout/${s.wid}"><span>${fmtDate(s.x)}</span><small>${s.sets.map((x) => prevText(type, x, unit(), sel)).join(' · ')}</small></a></li>`).join('')}</ul>
         </details>
       </section>
       <div class="grid-2">
@@ -1045,24 +1107,33 @@ VIEWS.body = () => {
 };
 
 /* ---------- EXERCISES ---------- */
+// When the Legs section is open, split the list under quads / hamstrings / glutes / calves headings
+function groupedRows(list, filter, row) {
+  if (filter !== 'legs') return list.map(row).join('');
+  return LEG_MUSCLES.map((mu) => {
+    const part = list.filter((e) => e.muscle === mu);
+    return part.length ? `<p class="list-label">${t('m_' + mu)}</p>${part.map(row).join('')}` : '';
+  }).join('');
+}
+
 VIEWS.exercises = () => {
   const f = S.ui.exFilter, q = S.ui.exSearch.trim().toLowerCase();
   const counts = {};
   S.workouts.forEach((w) => w.exercises.forEach((e) => (counts[e.exId] = (counts[e.exId] || 0) + 1)));
-  const list = allExercises().filter((e) => (f === 'all' || (f === 'custom' ? !e.builtin : e.muscle === f)) && (!q || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(q)))
+  const list = allExercises().filter((e) => (f === 'all' || (f === 'custom' ? !e.builtin : inGroup(e.muscle, f))) && (!q || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0) || exName(a).localeCompare(exName(b)));
   return {
     title: t('nav_exercises'),
     actions: `<button class="icon-btn" data-act="ex-new" aria-label="${t('new_exercise')}">${icon('plus')}</button>`,
     html: `<div class="page">
       <div class="search">${icon('search')}<input class="input" data-ex-search value="${esc(S.ui.exSearch)}" placeholder="${t('search_ex')}" type="search"/></div>
-      <div class="chips-scroll">${['all', ...MUSCLES, 'custom'].map((m) => `<button class="chip ${f === m ? 'chip-solid' : ''}" data-act="ex-filter" data-m="${m}">${m === 'all' ? t('all') : m === 'custom' ? t('custom') : t('m_' + m)}</button>`).join('')}</div>
-      <div class="ex-list">${list.map((e) => `
+      <div class="chips-scroll">${['all', ...GROUPS, 'custom'].map((m) => `<button class="chip ${f === m ? 'chip-solid' : ''}" data-act="ex-filter" data-m="${m}">${m === 'all' ? t('all') : m === 'custom' ? t('custom') : t('m_' + m)}</button>`).join('')}</div>
+      <div class="ex-list">${groupedRows(list, f, (e) => `
         <button class="ex-item" data-act="ex-open" data-id="${esc(e.id)}">
           <span class="ex-dot" style="background:var(--m-${e.muscle})"></span>
-          <span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)}${!e.builtin ? ` · ${t('custom')}` : ''}</small></span>
+          <span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}${!e.builtin ? ` · ${t('custom')}` : ''}</small></span>
           ${counts[e.id] ? `<span class="count">${counts[e.id]}</span>` : ''}
-        </button>`).join('') || `<p class="muted center">${t('no_results')}</p>`}</div>
+        </button>`) || `<p class="muted center">${t('no_results')}</p>`}</div>
       <button class="btn btn-dashed" data-act="ex-new">${icon('plus')}${t('new_exercise')}</button>
     </div>`,
   };
@@ -1222,17 +1293,17 @@ function exercisePicker(onPick, title = t('add_exercise')) {
   sortedWorkouts().slice(0, 15).forEach((w) => w.exercises.forEach((e) => { if (!recent.includes(e.exId)) recent.push(e.exId); }));
   const listHtml = () => {
     const ql = q.trim().toLowerCase();
-    let list = allExercises().filter((e) => (filter === 'all' || e.muscle === filter) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
+    let list = allExercises().filter((e) => (filter === 'all' || inGroup(e.muscle, filter)) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
     const rec = !ql && filter === 'all' ? recent.slice(0, 8).map(getEx) : [];
-    const row = (e) => `<button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)}</small></span>${icon('plus')}</button>`;
+    const row = (e) => `<button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}</small></span>${icon('plus')}</button>`;
     list = list.sort((a, b) => exName(a).localeCompare(exName(b)));
-    return `${rec.length ? `<p class="list-label">${t('recent')}</p>${rec.map(row).join('')}<p class="list-label">${t('all_exercises')}</p>` : ''}${list.map(row).join('') || `<p class="muted center">${t('no_results')}</p>`}
+    return `${rec.length ? `<p class="list-label">${t('recent')}</p>${rec.map(row).join('')}<p class="list-label">${t('all_exercises')}</p>` : ''}${groupedRows(list, filter, row) || `<p class="muted center">${t('no_results')}</p>`}
       <button class="btn btn-dashed" data-new-ex>${icon('plus')}${t('new_exercise')}${ql ? `: “${esc(q)}”` : ''}</button>`;
   };
   openSheet(`<div class="sheet-body picker">
       <div class="sheet-title"><h3>${esc(title)}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <div class="search">${icon('search')}<input class="input" type="search" data-q placeholder="${t('search_ex')}" autofocus/></div>
-      <div class="chips-scroll">${['all', ...MUSCLES].map((m) => `<button class="chip ${m === 'all' ? 'chip-solid' : ''}" data-mf="${m}">${m === 'all' ? t('all') : t('m_' + m)}</button>`).join('')}</div>
+      <div class="chips-scroll">${['all', ...GROUPS].map((m) => `<button class="chip ${m === 'all' ? 'chip-solid' : ''}" data-mf="${m}">${m === 'all' ? t('all') : t('m_' + m)}</button>`).join('')}</div>
       <div class="ex-list" data-list>${listHtml()}</div>
     </div>`, {
     wide: true,
@@ -1258,13 +1329,21 @@ function exerciseForm(existing, presetName = '', onSaved) {
       <label class="field"><span>${t('name')}</span><input class="input" name="name" value="${esc(e.name || '')}" required autofocus/></label>
       <label class="field"><span>${t('muscle')}</span><select class="input" name="muscle">${MUSCLES.map((m) => `<option value="${m}" ${e.muscle === m ? 'selected' : ''}>${t('m_' + m)}</option>`).join('')}</select></label>
       <label class="field"><span>${t('equipment')}</span><select class="input" name="equip">${EQUIP.map((m) => `<option value="${m}" ${e.equip === m ? 'selected' : ''}>${t('eq_' + m)}</option>`).join('')}</select></label>
-      <label class="field"><span>${t('tracking')}</span><select class="input" name="type">${['weight', 'bodyweight', 'time', 'cardio'].map((m) => `<option value="${m}" ${e.type === m ? 'selected' : ''}>${t('ty_' + m)}</option>`).join('')}</select></label>
+      <label class="field"><span>${t('tracking')}</span><select class="input" name="type">${['weight', 'bodyweight', 'time', 'carry', 'cardio'].map((m) => `<option value="${m}" ${e.type === m ? 'selected' : ''}>${t('ty_' + m)}</option>`).join('')}</select></label>
+      <div class="cardio-opts" ${e.type === 'cardio' ? '' : 'hidden'}>
+        <label class="field"><span>${t('dist_unit')}</span><select class="input" name="dist">${[['km', t('km')], ['m', t('m_short')], ['floors', t('floors')], ['', t('none')]].map(([v, l]) => `<option value="${v}" ${(e.dist === undefined ? 'km' : e.dist || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>${t('extra_field')}</span><select class="input" name="extra">${[['', t('none')], ...Object.keys(CARDIO_EXTRAS).map((k) => [k, extraLabel(k)])].map(([v, l]) => `<option value="${v}" ${(e.extra || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      </div>
       <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
     </form>`, {
-    onMount: (s, close) => s.querySelector('[data-exform]').addEventListener('submit', (ev) => {
+    onMount: (s, close) => {
+      const form = s.querySelector('[data-exform]');
+      form.elements.type.addEventListener('change', (ev) => { form.querySelector('.cardio-opts').hidden = ev.target.value !== 'cardio'; });
+      form.addEventListener('submit', (ev) => {
       ev.preventDefault();
       const fd = new FormData(ev.target);
       const obj = { id: existing ? existing.id : 'c_' + uid(), name: String(fd.get('name')).trim(), muscle: fd.get('muscle'), equip: fd.get('equip'), type: fd.get('type'), createdAt: existing?.createdAt || Date.now() };
+      if (obj.type === 'cardio') { obj.dist = fd.get('dist') || null; obj.extra = fd.get('extra') || null; }
       if (!obj.name) return;
       const i = S.exercises.findIndex((x) => x.id === obj.id);
       if (i >= 0) S.exercises[i] = obj; else S.exercises.push(obj);
@@ -1272,7 +1351,8 @@ function exerciseForm(existing, presetName = '', onSaved) {
       close();
       toast(t('saved'), 'success');
       if (onSaved) onSaved(obj.id); else render();
-    }),
+      });
+    },
   });
 }
 
@@ -1286,7 +1366,7 @@ function exerciseSheet(id) {
       ${b.sessions ? `<div class="pr-grid">
         <div><small>${t('sessions')}</small><b>${b.sessions}</b></div>
         <div><small>${t('last_done')}</small><b>${fmtDate(b.last, { day: 'numeric', month: 'short' })}</b></div>
-        ${e.type === 'weight' || !e.type ? `<div><small>${t('best_e1rm')}</small><b>${fmtW(b.e1rm)}</b></div><div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>` : `<div><small>${t('met_reps')}</small><b>${b.reps}</b></div>`}
+        ${e.type === 'weight' || !e.type ? `<div><small>${t('best_e1rm')}</small><b>${fmtW(b.e1rm)}</b></div><div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>` : otherCells(e.type, b, id)}
       </div>` : `<p class="muted">${t('never_done')}</p>`}
       <div class="row-actions start wrap">
         ${b.sessions ? `<a class="btn btn-primary btn-sm" href="#/progress/${encodeURIComponent(id)}" data-sheet-close>${icon('chart')}${t('view_progress')}</a>` : ''}
@@ -1351,8 +1431,8 @@ function otherDaySheet() {
 function addToActive(exId) {
   if (!S.active) return;
   const prev = lastSetsFor(exId, S.active.editingId);
-  const n = prev ? Math.min(prev.length, 6) : 3;
-  S.active.exercises.push({ exId, target: '', rest: null, note: '', sets: Array.from({ length: n }, () => ({ w: '', r: '', done: false })) });
+  const n = exType(exId) === 'cardio' ? 1 : prev ? Math.min(prev.length, 6) : 3;
+  S.active.exercises.push({ exId, target: '', rest: null, note: '', sets: Array.from({ length: n }, () => ({ w: '', r: '', x: '', done: false })) });
   saveActive(true);
 }
 
@@ -1396,9 +1476,20 @@ function exportJSON() {
   toast(t('exported'), 'success');
 }
 function exportCSV() {
-  const rows = [['date', 'workout', 'exercise', 'set', 'type', 'weight_kg', 'reps_or_value', 'e1rm_kg', 'duration_min']];
+  const rows = [['date', 'workout', 'exercise', 'set', 'type', 'weight_kg', 'reps', 'seconds', 'minutes', 'distance', 'distance_unit', 'extra', 'e1rm_kg', 'duration_min']];
   sortedWorkouts().reverse().forEach((w) => w.exercises.forEach((e) => e.sets.forEach((s, j) => {
-    rows.push([w.date, w.title || '', exName(e.exId), j + 1, s.kind === 'warm' ? 'warmup' : exType(e.exId), s.w ?? '', s.r ?? '', exType(e.exId) === 'weight' ? r1(e1rm(s.w || 0, s.r || 0)) : '', Math.round((w.duration || 0) / 60)]);
+    const type = exType(e.exId), c = type === 'cardio' ? cardioDef(e.exId) : null;
+    rows.push([
+      w.date, w.title || '', exName(e.exId), j + 1, s.kind === 'warm' ? 'warmup' : type,
+      isLoad(type) ? (s.w ?? '') : '',
+      type === 'weight' || type === 'bodyweight' ? (s.r ?? '') : '',
+      type === 'time' ? (s.r ?? '') : '',
+      type === 'cardio' ? (s.r ?? '') : '',
+      type === 'cardio' ? (c.dist ? (s.w ?? '') : '') : type === 'carry' ? (s.r ?? '') : '',
+      type === 'cardio' ? (c.dist || '') : type === 'carry' ? 'm' : '',
+      type === 'cardio' && c.extra ? `${c.extra}=${s.x ?? ''}` : '',
+      type === 'weight' ? r1(e1rm(s.w || 0, s.r || 0)) : '', Math.round((w.duration || 0) / 60),
+    ]);
   })));
   const csv = '﻿' + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
   download(`gymflow-workouts-${dateKey()}.csv`, csv, 'text/csv');
@@ -1476,7 +1567,7 @@ A['day-del'] = async (el) => {
   p.days.splice(d, 1); savePlan(p); render();
 };
 A['day-move'] = (el) => { const p = plan(), d = +el.dataset.d, n = d + +el.dataset.dir; [p.days[d], p.days[n]] = [p.days[n], p.days[d]]; savePlan(p); render(); };
-A['item-add'] = (el) => { const p = plan(), d = +el.dataset.d; exercisePicker((exId) => { p.days[d].items.push({ exId, sets: 3, reps: '8-12', rest: null }); savePlan(p); render(); }); };
+A['item-add'] = (el) => { const p = plan(), d = +el.dataset.d; exercisePicker((exId) => { p.days[d].items.push({ exId, ...itemDefaults(exId), rest: null }); savePlan(p); render(); }); };
 A['item-menu'] = (el) => {
   const p = plan(), d = +el.dataset.d, i = +el.dataset.i, items = p.days[d].items;
   openSheet(`<div class="sheet-body">
@@ -1494,7 +1585,7 @@ A['item-menu'] = (el) => {
       const m = b.dataset.m;
       if (m === 'up' || m === 'down') { const n = i + (m === 'up' ? -1 : 1); [items[i], items[n]] = [items[n], items[i]]; }
       if (m === 'del') items.splice(i, 1);
-      if (m === 'swap') return exercisePicker((exId) => { items[i].exId = exId; savePlan(p); render(); }, t('replace_ex'));
+      if (m === 'swap') return exercisePicker((exId) => { if (exType(exId) !== exType(items[i].exId)) Object.assign(items[i], itemDefaults(exId), { rest: null }); items[i].exId = exId; savePlan(p); render(); }, t('replace_ex'));
       if (m === 'info') return exerciseSheet(items[i].exId);
       savePlan(p); render();
     }),
@@ -1524,17 +1615,18 @@ A['set-done'] = (el) => {
     // fill blanks from placeholders
     const row = el.closest('.setrow');
     row.querySelectorAll('[data-f]').forEach((inp) => { if (!inp.value && inp.placeholder) { inp.value = inp.placeholder; s[inp.dataset.f] = inp.placeholder; } });
-    if (num(s.r) == null && !(type === 'cardio' && num(s.w) != null)) { toast(t('enter_reps'), 'error'); row.querySelector('[data-f="r"]')?.focus(); return; }
-    if (type === 'weight' && num(s.w) == null) s.w = '0';
+    if (num(s.r) == null && !(type === 'cardio' && num(s.w) != null)) { toast(t(type === 'cardio' ? 'enter_cardio' : 'enter_reps'), 'error'); row.querySelector('[data-f="r"]')?.focus(); return; }
+    if ((type === 'weight' || type === 'carry') && num(s.w) == null) s.w = '0';
     s.done = true;
-    if (s.kind !== 'warm') startRest(e.rest || S.profile.rest || 90);
+    // cardio has no rest between "sets"
+    if (s.kind !== 'warm' && type !== 'cardio') startRest(e.rest || S.profile.rest || 90);
   } else s.done = false;
   saveActive(true); render();
 };
 A['set-add'] = (el) => {
   const e = act().exercises[+el.dataset.i];
   const last = e.sets[e.sets.length - 1];
-  e.sets.push({ w: last ? last.w : '', r: last ? last.r : '', done: false });
+  e.sets.push({ w: last ? last.w : '', r: last ? last.r : '', x: last ? last.x : '', done: false });
   saveActive(true); render();
 };
 A['set-remove'] = (el) => { const e = act().exercises[+el.dataset.i]; if (e.sets.length > 1) e.sets.pop(); saveActive(true); render(); };
@@ -1544,7 +1636,7 @@ A['ex-menu'] = (el) => {
   const i = +el.dataset.i, list = act().exercises, e = list[i];
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(e.exId))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
-      <label class="field"><span>${t('rest_s')}</span><div class="chips-wrap">${[45, 60, 90, 120, 180, 240].map((s) => `<button class="chip ${(e.rest || S.profile.rest || 90) === s ? 'chip-solid' : ''}" data-rest="${s}">${s}</button>`).join('')}</div></label>
+      ${exType(e.exId) === 'cardio' ? '' : `<label class="field"><span>${t('rest_s')}</span><div class="chips-wrap">${[45, 60, 90, 120, 180, 240].map((s) => `<button class="chip ${(e.rest || S.profile.rest || 90) === s ? 'chip-solid' : ''}" data-rest="${s}">${s}</button>`).join('')}</div></label>`}
       <div class="menu-list">
         <button data-m="up" ${i === 0 ? 'disabled' : ''}>${icon('up')}${t('move_up')}</button>
         <button data-m="down" ${i === list.length - 1 ? 'disabled' : ''}>${icon('down')}${t('move_down')}</button>

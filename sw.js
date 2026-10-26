@@ -1,6 +1,6 @@
 // Service worker: makes the app load offline (e.g. weak signal inside the gym).
 // Bump VERSION whenever you upload changed files so users get the update.
-const VERSION = 'gymflow-v1.1.0';
+const VERSION = 'gymflow-v1.2.0';
 const SHELL = [
   './',
   './index.html',

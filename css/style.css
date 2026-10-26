@@ -391,6 +391,16 @@ form.inline-form { grid-template-columns: 1fr 1fr auto; }
 
 .setrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) 66px 58px 44px; gap: 6px; align-items: center; padding: 3px 2px; border-radius: 10px; transition: background .2s; }
 .setrow.cols-1 { grid-template-columns: 34px minmax(0, 1fr) 88px 44px; }
+.setrow.cols-3 { grid-template-columns: 34px minmax(0, .9fr) 58px 58px 58px 44px; }
+/* cardio: no "previous" column; the last session is shown as a line above instead */
+.setrow.nopre { grid-template-columns: 34px repeat(var(--n, 2), minmax(0, 1fr)) 44px; }
+.setrow.nopre.cols-1 { --n: 1; } .setrow.nopre.cols-2 { --n: 2; } .setrow.nopre.cols-3 { --n: 3; }
+.setrow.head.nopre span:nth-child(2) { text-align: center; }
+span.setno { display: grid; place-items: center; color: var(--muted); }
+.prev-line { padding: 0 4px; }
+.item-na { text-align: center; color: var(--muted); }
+.cardio-opts { display: grid; gap: 14px; }
+.cardio-opts[hidden] { display: none; }
 .setrow.head { font-size: .7rem; color: var(--muted); padding-block: 0; }
 .setrow.head span { text-align: center; }
 .setrow.head span:nth-child(2) { text-align: start; }
