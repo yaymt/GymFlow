@@ -112,7 +112,8 @@ export const EXERCISES = [
   ex('single_calf', 'Single-Leg Calf Raise', 'رفع السمانة برجل واحدة', 'calves', 'bodyweight', 'bodyweight'),
   // Core
   ex('plank', 'Plank', 'بلانك', 'core', 'bodyweight', 'time'),
-  ex('crunch', 'Crunch', 'كرنش بطن', 'core', 'bodyweight', 'bodyweight'),
+  ex('crunch', 'Crunch', 'كرنش بطن على الأرض', 'core', 'bodyweight', 'bodyweight'),
+  ex('ab_crunch', 'Abdominal Crunch', 'كرنش البطن (جهاز)', 'core', 'machine'),
   ex('hanging_raise', 'Hanging Leg Raise', 'رفع الأرجل من التعلّق', 'core', 'bodyweight', 'bodyweight'),
   ex('cable_crunch', 'Cable Crunch', 'كرنش بطن كيبل', 'core', 'cable'),
   ex('russian_twist', 'Russian Twist', 'التفاف روسي', 'core', 'bodyweight', 'bodyweight'),

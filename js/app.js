@@ -5,7 +5,7 @@ import { MEDIA, MEDIA_BASE } from './exmedia.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 
 /* =========================================================
    State
@@ -1297,7 +1297,8 @@ function exercisePicker(onPick, title = t('add_exercise')) {
     const ql = q.trim().toLowerCase();
     let list = allExercises().filter((e) => (filter === 'all' || inGroup(e.muscle, filter)) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
     const rec = !ql && filter === 'all' ? recent.slice(0, 8).map(getEx) : [];
-    const row = (e) => `<button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}</small></span>${icon('plus')}</button>`;
+    // the picture button lets you see what the exercise is before choosing it
+    const row = (e) => `<div class="ex-row"><button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}</small></span>${icon('plus')}</button><button class="icon-btn sm ex-peek" data-preview="${esc(e.id)}" aria-label="${t('ex_details')}">${icon('image')}</button></div>`;
     list = list.sort((a, b) => exName(a).localeCompare(exName(b)));
     return `${rec.length ? `<p class="list-label">${t('recent')}</p>${rec.map(row).join('')}<p class="list-label">${t('all_exercises')}</p>` : ''}${groupedRows(list, filter, row) || `<p class="muted center">${t('no_results')}</p>`}
       <button class="btn btn-dashed" data-new-ex>${icon('plus')}${t('new_exercise')}${ql ? `: “${esc(q)}”` : ''}</button>`;
@@ -1315,11 +1316,28 @@ function exercisePicker(onPick, title = t('add_exercise')) {
       s.addEventListener('click', (e) => {
         const mf = e.target.closest('[data-mf]');
         if (mf) { filter = mf.dataset.mf; s.querySelectorAll('[data-mf]').forEach((b) => b.classList.toggle('chip-solid', b === mf)); L.innerHTML = listHtml(); }
+        const pv = e.target.closest('[data-preview]');
+        if (pv) { previewSheet(pv.dataset.preview, (id) => { close(); onPick(id); }); return; }
         const p = e.target.closest('[data-pick]');
         if (p) { close(); onPick(p.dataset.pick); }
         if (e.target.closest('[data-new-ex]')) { close(); exerciseForm(null, q, (id) => onPick(id)); }
       });
     },
+  });
+}
+
+// Look at an exercise (photo, video link, steps) from inside the picker, with a button to choose it
+function previewSheet(id, onChoose) {
+  let stop = () => {};
+  const e = getEx(id);
+  openSheet(`<div class="sheet-body">
+      <div class="sheet-title"><h3>${esc(exName(e))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
+      ${demoHtml(id)}
+      <p class="muted">${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
+      <div class="row-actions"><button class="btn btn-ghost" data-sheet-close>${t('close')}</button><button class="btn btn-primary" data-choose>${icon('plus')}${t('choose_ex')}</button></div>
+    </div>`, {
+    onClose: () => stop(),
+    onMount: (s, close) => { stop = mountDemo(s); s.querySelector('[data-choose]').addEventListener('click', () => { close(); onChoose(id); }); },
   });
 }
 

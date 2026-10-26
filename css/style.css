@@ -515,6 +515,9 @@ span.setno { display: grid; place-items: center; color: var(--muted); }
 .ex-list { display: grid; gap: 2px; }
 .ex-item { display: flex; align-items: center; gap: 12px; padding: 10px 10px; border-radius: 12px; text-align: start; width: 100%; }
 .ex-item:hover { background: var(--surface-2); }
+.ex-row { display: flex; align-items: center; gap: 4px; }
+.ex-row .ex-item { flex: 1; min-width: 0; }
+.ex-peek { color: var(--accent-ink); }
 .ex-item > span:nth-child(2) { flex: 1; display: grid; min-width: 0; }
 .ex-item small { color: var(--muted); font-size: .78rem; }
 .ex-item > .ic { color: var(--muted); }
