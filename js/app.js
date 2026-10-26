@@ -1,10 +1,11 @@
 import { createStore, isCloud, uid, authErrorKey } from './store.js';
 import { EXERCISES, TEMPLATES, MUSCLES, MEASURE_KEYS, GROUPS, LEG_MUSCLES, CARDIO_EXTRAS, inGroup } from './data.js';
 import { T } from './i18n.js';
+import { MEDIA, MEDIA_BASE } from './exmedia.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 /* =========================================================
    State
@@ -702,6 +703,7 @@ VIEWS.log = () => {
     return `<section class="exblock" data-i="${i}">
       <div class="exhead">
         <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${t('m_' + ex.muscle)}${e.target ? ` · ${t('target')} ${esc(e.target)}${unitSfx}` : ''}${restInfo}</small></button>
+        <button class="icon-btn sm" data-act="ex-demo" data-i="${i}" aria-label="${t('ex_details')}">${icon('image')}</button>
         <button class="icon-btn sm" data-act="ex-menu" data-i="${i}" aria-label="${t('more')}">${icon('more')}</button>
       </div>
       ${lastLine}
@@ -1356,12 +1358,45 @@ function exerciseForm(existing, presetName = '', onSaved) {
   });
 }
 
+// Demo images (start / end position, flipped back and forth), written steps and a video link
+function demoHtml(id) {
+  const e = getEx(id), m = MEDIA[id];
+  const q = encodeURIComponent(`${e.en || exName(e)} exercise form`);
+  const video = `<a class="btn btn-ghost btn-sm" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener noreferrer">${icon('video')}${t('demo_video')}</a>`;
+  if (!m) return `<div class="demo demo-none"><p class="muted small">${t('demo_none')}</p>${video}</div>`;
+  return `<div class="demo">
+      <div class="demo-stage" data-demo-stage role="img" aria-label="${esc(exName(e))}" title="${t('demo_tap')}">
+        ${m.imgs.map((p, i) => `<img src="${MEDIA_BASE}${p}" alt="" class="${i ? '' : 'on'}" draggable="false"/>`).join('')}
+        <p class="demo-off" hidden>${t('demo_offline')}</p>
+      </div>
+      <div class="demo-bar">${video}<span class="muted small">${t('demo_tap')}</span></div>
+      <details class="demo-steps"><summary>${t('demo_steps')}</summary><ol>${m.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
+        <p class="muted small">${t('demo_credit')}</p></details>
+    </div>`;
+}
+function mountDemo(sheet) {
+  const stage = sheet.querySelector('[data-demo-stage]');
+  if (!stage) return () => {};
+  const imgs = [...stage.querySelectorAll('img')];
+  let i = 0, paused = false, loaded = 0;
+  const show = (n) => { imgs.forEach((im, k) => im.classList.toggle('on', k === n)); };
+  const timer = setInterval(() => { if (!paused && imgs.length > 1) { i = (i + 1) % imgs.length; show(i); } }, 900);
+  stage.addEventListener('click', () => { paused = !paused; stage.classList.toggle('paused', paused); });
+  imgs.forEach((im) => {
+    im.addEventListener('load', () => { loaded++; stage.classList.add('ready'); });
+    im.addEventListener('error', () => { if (!loaded) { stage.querySelector('.demo-off').hidden = false; imgs.forEach((x) => (x.hidden = true)); } });
+  });
+  return () => clearInterval(timer);
+}
+
 function exerciseSheet(id) {
+  let stopDemo = () => {};
   const e = getEx(id);
   const b = bestsFor(id);
   const custom = !BUILTIN[id];
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(e))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
+      ${demoHtml(id)}
       <p class="muted">${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
       ${b.sessions ? `<div class="pr-grid">
         <div><small>${t('sessions')}</small><b>${b.sessions}</b></div>
@@ -1374,7 +1409,8 @@ function exerciseSheet(id) {
         ${custom ? `<button class="btn btn-ghost btn-sm" data-edit>${icon('edit')}${t('edit')}</button><button class="btn btn-ghost btn-sm danger" data-del>${icon('trash')}${t('delete')}</button>` : ''}
       </div>
     </div>`, {
-    onMount: (s, close) => s.addEventListener('click', async (ev) => {
+    onClose: () => stopDemo(),
+    onMount: (s, close) => { stopDemo = mountDemo(s); s.addEventListener('click', async (ev) => {
       if (ev.target.closest('[data-edit]')) { close(); exerciseForm(S.exercises.find((x) => x.id === id)); }
       if (ev.target.closest('[data-add-active]')) { close(); addToActive(id); go('log'); }
       if (ev.target.closest('[data-del]')) {
@@ -1383,7 +1419,7 @@ function exerciseSheet(id) {
           S.exercises = S.exercises.filter((x) => x.id !== id); unpersist('exercises', id); render();
         }
       }
-    }),
+    }); },
   });
 }
 
@@ -1632,6 +1668,7 @@ A['set-add'] = (el) => {
 A['set-remove'] = (el) => { const e = act().exercises[+el.dataset.i]; if (e.sets.length > 1) e.sets.pop(); saveActive(true); render(); };
 A['set-kind'] = (el) => { const s = act().exercises[+el.dataset.i].sets[+el.dataset.j]; s.kind = s.kind === 'warm' ? undefined : 'warm'; saveActive(true); render(); };
 A['ex-add'] = () => exercisePicker((exId) => { addToActive(exId); render(); setTimeout(() => document.querySelector('.exblock:last-of-type')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50); });
+A['ex-demo'] = (el) => exerciseSheet(act().exercises[+el.dataset.i].exId);
 A['ex-menu'] = (el) => {
   const i = +el.dataset.i, list = act().exercises, e = list[i];
   openSheet(`<div class="sheet-body">

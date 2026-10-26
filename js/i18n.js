@@ -70,7 +70,9 @@ export const T = {
     delete_day_q: 'حذف هذا اليوم وتمارينه؟',
     exercise: 'التمرين', sets: 'مجموعات', reps: 'تكرار', rest_s: 'راحة (ث)',
     add_exercise: 'أضف تمرينًا', start: 'ابدأ', move_up: 'تحريك لأعلى', move_down: 'تحريك لأسفل',
-    replace_ex: 'استبدال التمرين', ex_details: 'تفاصيل التمرين', remove: 'إزالة',
+    replace_ex: 'استبدال التمرين', ex_details: 'شرح التمرين بالصورة', remove: 'إزالة',
+    demo_video: 'شاهد فيديو', demo_tap: 'اضغط على الصورة للإيقاف', demo_steps: 'طريقة الأداء (بالإنجليزية)', demo_none: 'ما فيه صورة لهذا التمرين بعد.',
+    demo_offline: 'تعذّر تحميل الصورة. تحتاج اتصالًا بالإنترنت أول مرة.', demo_credit: 'الصور والشرح: مشروع free-exercise-db (ملكية عامة).',
     template_hint: 'ينشئ نسخة قابلة للتعديل بالكامل. الأيام موزعة على الأسبوع ويمكنك تغييرها.',
     plan_created: 'تم إنشاء الجدول', now_active: 'أصبح هذا الجدول نشطًا', choose_day: 'اختر يوم التمرين',
 
@@ -231,7 +233,9 @@ export const T = {
     delete_day_q: 'Delete this day and its exercises?',
     exercise: 'Exercise', sets: 'Sets', reps: 'Reps', rest_s: 'Rest (s)',
     add_exercise: 'Add exercise', start: 'Start', move_up: 'Move up', move_down: 'Move down',
-    replace_ex: 'Replace exercise', ex_details: 'Exercise details', remove: 'Remove',
+    replace_ex: 'Replace exercise', ex_details: 'How to do it', remove: 'Remove',
+    demo_video: 'Watch video', demo_tap: 'Tap the image to pause', demo_steps: 'How to perform it', demo_none: 'No image for this exercise yet.',
+    demo_offline: 'Could not load the image. You need an internet connection the first time.', demo_credit: 'Images and steps: free-exercise-db project (public domain).',
     template_hint: 'Creates a fully editable copy. Days are spread across the week and you can change them.',
     plan_created: 'Plan created', now_active: 'This plan is now active', choose_day: 'Choose a day',
 
