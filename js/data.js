@@ -9,10 +9,11 @@
 
 export const MUSCLES = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core', 'cardio', 'full'];
 
-// Legs is one section in the exercise list; the four parts below still count separately in progress stats.
+// Sections shown in the exercise list. Arms and legs are split into parts; the parts still count separately in progress stats.
 export const LEG_MUSCLES = ['quads', 'hamstrings', 'glutes', 'calves'];
-export const GROUPS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'legs', 'core', 'cardio', 'full'];
-export const inGroup = (muscle, group) => (group === 'legs' ? LEG_MUSCLES.includes(muscle) : muscle === group);
+export const PARTS = { arms: ['biceps', 'triceps'], legs: LEG_MUSCLES };
+export const GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'cardio', 'full'];
+export const inGroup = (muscle, group) => (PARTS[group] ? PARTS[group].includes(muscle) : muscle === group);
 
 export const CARDIO_EXTRAS = {
   incline: { ar: 'الميل', en: 'Incline', unit: '%' },
@@ -32,17 +33,17 @@ export const EXERCISES = [
   ex('chest_fly', 'Dumbbell Chest Fly', 'تفتيح صدر دمبل', 'chest', 'dumbbell'),
   ex('cable_fly', 'Cable Fly', 'تفتيح صدر كيبل', 'chest', 'cable'),
   ex('pec_deck', 'Pec Deck Fly', 'جهاز الفراشة', 'chest', 'machine'),
-  ex('chest_press', 'Machine Chest Press', 'جهاز ضغط الصدر', 'chest', 'machine'),
+  ex('chest_press', 'Chest Press', 'شيست برس (جهاز)', 'chest', 'machine'),
   ex('pushup', 'Push-Up', 'ضغط (بوش أب)', 'chest', 'bodyweight', 'bodyweight'),
   ex('dips', 'Parallel Bar Dips', 'متوازي (دبس)', 'triceps', 'bodyweight', 'bodyweight'),
   // Back
   ex('deadlift', 'Conventional Deadlift', 'رفعة ميتة', 'back', 'barbell'),
   ex('pullup', 'Pull-Up', 'عقلة', 'back', 'bodyweight', 'bodyweight'),
   ex('chinup', 'Chin-Up', 'عقلة قبضة عكسية', 'back', 'bodyweight', 'bodyweight'),
-  ex('lat_pulldown', 'Lat Pulldown', 'سحب أمامي (لات بول داون)', 'back', 'cable'),
+  ex('lat_pulldown', 'Lat Pull Down', 'سحب علوي (لات بول داون)', 'back', 'cable'),
   ex('barbell_row', 'Barbell Bent-Over Row', 'تجديف بالبار', 'back', 'barbell'),
   ex('db_row', 'One-Arm Dumbbell Row', 'تجديف دمبل بيد واحدة', 'back', 'dumbbell'),
-  ex('seated_row', 'Seated Cable Row', 'تجديف كيبل جالس', 'back', 'cable'),
+  ex('seated_row', 'Seated Cable Row', 'سحب أفقي (تجديف كيبل جالس)', 'back', 'cable'),
   ex('tbar_row', 'T-Bar Row', 'تجديف تي بار', 'back', 'barbell'),
   ex('machine_row', 'Machine Row', 'جهاز تجديف الظهر', 'back', 'machine'),
   ex('straight_pulldown', 'Straight-Arm Pulldown', 'سحب بذراعين مستقيمتين', 'back', 'cable'),
@@ -57,9 +58,11 @@ export const EXERCISES = [
   ex('rear_delt', 'Dumbbell Rear Delt Fly', 'رفرفة خلفي (كتف خلفي) دمبل', 'shoulders', 'dumbbell'),
   ex('face_pull', 'Cable Face Pull', 'فيس بول كيبل', 'shoulders', 'cable'),
   ex('arnold', 'Arnold Press', 'ضغط أرنولد', 'shoulders', 'dumbbell'),
+  ex('shoulder_press_machine', 'Shoulder Press', 'شولدر برس (جهاز)', 'shoulders', 'machine'),
+  ex('reverse_fly', 'Reverse Fly', 'رفرفة عكسية (جهاز)', 'shoulders', 'machine'),
   // Arms
   ex('bb_curl', 'Barbell Curl', 'بايسبس بالبار', 'biceps', 'barbell'),
-  ex('db_curl', 'Dumbbell Curl', 'بايسبس دمبل', 'biceps', 'dumbbell'),
+  ex('db_curl', 'Biceps Curl', 'بايسبس دمبل', 'biceps', 'dumbbell'),
   ex('hammer_curl', 'Hammer Curl', 'بايسبس هامر دمبل', 'biceps', 'dumbbell'),
   ex('preacher', 'Preacher Curl', 'بايسبس بريتشر (ارتكاز)', 'biceps', 'machine'),
   ex('cable_curl', 'Cable Curl', 'بايسبس كيبل', 'biceps', 'cable'),
@@ -75,35 +78,35 @@ export const EXERCISES = [
   ex('smith_squat', 'Smith Machine Squat', 'سكوات على جهاز سميث', 'quads', 'machine'),
   ex('goblet', 'Goblet Squat', 'سكوات جوبلت', 'quads', 'dumbbell'),
   ex('hack_squat', 'Hack Squat', 'هاك سكوات', 'quads', 'machine'),
-  ex('leg_press', 'Leg Press', 'ضغط الأرجل (ليج برس)', 'quads', 'machine'),
-  ex('leg_ext', 'Leg Extension', 'تمديد الأرجل (فخذ أمامي)', 'quads', 'machine'),
+  ex('leg_press', 'Leg Press', 'ضغط الأرجل (ليق برس)', 'quads', 'machine'),
+  ex('leg_ext', 'Leg Extension', 'تمديد الأرجل (ليق إكستنشن)', 'quads', 'machine'),
   ex('lunge', 'Dumbbell Walking Lunge', 'اندفاع مشي بالدمبل (لانجز)', 'quads', 'dumbbell'),
   ex('db_lunge', 'Dumbbell Lunge', 'اندفاع ثابت بالدمبل', 'quads', 'dumbbell'),
   ex('reverse_lunge', 'Dumbbell Reverse Lunge', 'اندفاع عكسي بالدمبل', 'quads', 'dumbbell'),
-  ex('bulgarian', 'Bulgarian Split Squat', 'سكوات بلغاري', 'quads', 'dumbbell'),
-  ex('step_up', 'Dumbbell Step-Up', 'صعود الصندوق بالدمبل', 'quads', 'dumbbell'),
+  ex('bulgarian', 'Bulgarian Split Squat', 'السكوات البلغاري', 'quads', 'dumbbell'),
+  ex('step_up', 'Step Up', 'ستيب أب (صعود الصندوق)', 'quads', 'dumbbell'),
   ex('bw_squat', 'Bodyweight Squat', 'سكوات بوزن الجسم', 'quads', 'bodyweight', 'bodyweight'),
   ex('jump_squat', 'Jump Squat', 'سكوات قفز', 'quads', 'bodyweight', 'bodyweight'),
   ex('box_jump', 'Box Jump', 'قفز على الصندوق', 'quads', 'bodyweight', 'bodyweight'),
   ex('wall_sit', 'Wall Sit', 'جلوس على الحائط', 'quads', 'bodyweight', 'time'),
   ex('sled_push', 'Sled Push', 'دفع الزلاجة', 'quads', 'other', 'carry'),
-  ex('adductor', 'Hip Adductor Machine', 'جهاز ضم الفخذ (الجزء الداخلي)', 'quads', 'machine'),
+  ex('adductor', 'Hip Adduction', 'هيب أداكشن (ضم الفخذ)', 'quads', 'machine'),
   // Legs: hamstrings
-  ex('rdl', 'Romanian Deadlift', 'رفعة رومانية بالبار', 'hamstrings', 'barbell'),
+  ex('rdl', 'Romanian Deadlift', 'الرفعة الرومانية', 'hamstrings', 'barbell'),
   ex('db_rdl', 'Dumbbell Romanian Deadlift', 'رفعة رومانية بالدمبل', 'hamstrings', 'dumbbell'),
   ex('stiff_leg', 'Stiff-Leg Deadlift', 'رفعة ميتة بأرجل مفرودة', 'hamstrings', 'barbell'),
   ex('sumo_deadlift', 'Sumo Deadlift', 'رفعة ميتة سومو', 'hamstrings', 'barbell'),
   ex('good_morning', 'Barbell Good Morning', 'جود مورنينج بالبار', 'hamstrings', 'barbell'),
   ex('leg_curl', 'Lying Leg Curl', 'ثني الأرجل استلقاء (فخذ خلفي)', 'hamstrings', 'machine'),
-  ex('seated_leg_curl', 'Seated Leg Curl', 'ثني الأرجل جالس (فخذ خلفي)', 'hamstrings', 'machine'),
+  ex('seated_leg_curl', 'Seated Leg Curl', 'ثني الأرجل جالس (ليق كيرل)', 'hamstrings', 'machine'),
   ex('nordic', 'Nordic Hamstring Curl', 'نوردك للفخذ الخلفي', 'hamstrings', 'bodyweight', 'bodyweight'),
   // Legs: glutes
-  ex('hip_thrust', 'Barbell Hip Thrust', 'هيب ثرست بالبار', 'glutes', 'barbell'),
+  ex('hip_thrust', 'Hip Thrust', 'هيب ثرست', 'glutes', 'barbell'),
   ex('glute_bridge', 'Glute Bridge', 'جسر الأرداف', 'glutes', 'bodyweight', 'bodyweight'),
   ex('sumo_squat', 'Dumbbell Sumo Squat', 'سكوات سومو بالدمبل', 'glutes', 'dumbbell'),
   ex('pull_through', 'Cable Pull-Through', 'سحب الكيبل بين الأرجل', 'glutes', 'cable'),
-  ex('glute_kick', 'Cable Glute Kickback', 'ركلة أرداف كيبل', 'glutes', 'cable'),
-  ex('abductor', 'Hip Abductor Machine', 'جهاز تبعيد الفخذ', 'glutes', 'machine'),
+  ex('glute_kick', 'Cable Kickback', 'كيبل كيك باك (أرداف)', 'glutes', 'cable'),
+  ex('abductor', 'Hip Abduction', 'هيب أبداكشن (تبعيد الفخذ)', 'glutes', 'machine'),
   // Legs: calves
   ex('calf_raise', 'Standing Calf Raise', 'رفع السمانة واقف', 'calves', 'machine'),
   ex('seated_calf', 'Seated Calf Raise', 'رفع السمانة جالس', 'calves', 'machine'),
@@ -184,6 +187,17 @@ export const TEMPLATES = [
       d('Shoulders', 'أكتاف', 2, [['ohp', 4, '8'], ['lateral_raise', 4, '15'], ['rear_delt', 3, '15'], ['front_raise', 3, '12'], ['face_pull', 3, '15']]),
       d('Legs', 'أرجل', 3, [['squat', 4, '8'], ['leg_press', 3, '12'], ['rdl', 3, '10'], ['leg_curl', 3, '12'], ['calf_raise', 4, '15']]),
       d('Arms', 'ذراعين', 4, [['bb_curl', 3, '10'], ['skull', 3, '10'], ['hammer_curl', 3, '12'], ['pushdown', 3, '12'], ['incline_curl', 3, '12'], ['oh_ext', 3, '12']]),
+    ],
+  },
+  {
+    id: 'L',
+    name: { en: 'L', ar: 'L' },
+    desc: { en: '4 days: glutes and quads, upper body, glutes and hamstrings, upper body', ar: '٤ أيام: قلوتس وفخذ أمامي، علوي، قلوتس وفخذ خلفي، علوي' },
+    days: [
+      d('Glutes & Quads', 'قلوتس وفخذ أمامي', 6, [['hip_thrust', 4, '8-10'], ['bulgarian', 3, '10'], ['abductor', 3, '15'], ['leg_ext', 3, '12'], ['leg_press', 3, '10-12']]),
+      d('Back, Chest & Shoulders + Biceps', 'ظهر وصدر وأكتاف + بايسبس', 0, [['lat_pulldown', 3, '10'], ['seated_row', 3, '10'], ['chest_press', 3, '10'], ['shoulder_press_machine', 3, '10'], ['lateral_raise', 3, '15'], ['reverse_fly', 3, '15'], ['db_curl', 3, '12']]),
+      d('Glutes & Hamstrings', 'قلوتس وفخذ خلفي', 2, [['rdl', 4, '8-10'], ['glute_kick', 3, '12'], ['seated_leg_curl', 3, '12'], ['step_up', 3, '10']]),
+      d('Back, Chest & Shoulders + Triceps', 'ظهر وصدر وأكتاف + ترايسبس', 4, [['lat_pulldown', 3, '10'], ['seated_row', 3, '10'], ['chest_press', 3, '10'], ['reverse_fly', 3, '15'], ['pushdown', 3, '12']]),
     ],
   },
 ];

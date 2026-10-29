@@ -406,6 +406,31 @@ export const MEDIA = {
    "Repeat for the recommended amount of repetitions."
   ]
  },
+ "shoulder_press_machine": {
+  "imgs": [
+   "Machine_Shoulder_Military_Press/0.jpg",
+   "Machine_Shoulder_Military_Press/1.jpg"
+  ],
+  "steps": [
+   "Sit down on the Shoulder Press Machine and select the weight.",
+   "Grab the handles to your sides as you keep the elbows bent and in line with your torso. This will be your starting position.",
+   "Now lift the handles as you exhale and you extend the arms fully. At the top of the position make sure that you hold the contraction for a second.",
+   "Lower the handles slowly back to the starting position as you inhale.",
+   "Repeat for the recommended amount of repetitions."
+  ]
+ },
+ "reverse_fly": {
+  "imgs": [
+   "Reverse_Machine_Flyes/0.jpg",
+   "Reverse_Machine_Flyes/1.jpg"
+  ],
+  "steps": [
+   "Adjust the handles so that they are fully to the rear. Make an appropriate weight selection and adjust the seat height so the handles are at shoulder level. Grasp the handles with your hands facing inwards. This will be your starting position.",
+   "In a semicircular motion, pull your hands out to your side and back, contracting your rear delts.",
+   "Keep your arms slightly bent throughout the movement, with all of the motion occurring at the shoulder joint.",
+   "Pause at the rear of the movement, and slowly return the weight to the starting position."
+  ]
+ },
  "bb_curl": {
   "imgs": [
    "Barbell_Curl/0.jpg",

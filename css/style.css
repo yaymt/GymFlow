@@ -515,6 +515,12 @@ span.setno { display: grid; place-items: center; color: var(--muted); }
 .ex-list { display: grid; gap: 2px; }
 .ex-item { display: flex; align-items: center; gap: 12px; padding: 10px 10px; border-radius: 12px; text-align: start; width: 100%; }
 .ex-item:hover { background: var(--surface-2); }
+.chips-main .chip, .chips-sub .chip { height: 38px; }
+.chip i { font-style: normal; font-size: .72rem; color: var(--muted); }
+.chip-solid i { color: inherit; opacity: .7; }
+.chips-sub { padding: 8px; border-radius: var(--r); background: var(--surface-2); }
+.chips-sub .chip { background: var(--surface); height: 34px; }
+.chips-sub .chip-solid { background: var(--text); }
 .ex-row { display: flex; align-items: center; gap: 4px; }
 .ex-row .ex-item { flex: 1; min-width: 0; }
 .ex-peek { color: var(--accent-ink); }

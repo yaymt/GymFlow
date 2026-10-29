@@ -1,11 +1,11 @@
 import { createStore, isCloud, uid, authErrorKey } from './store.js';
-import { EXERCISES, TEMPLATES, MUSCLES, MEASURE_KEYS, GROUPS, LEG_MUSCLES, CARDIO_EXTRAS, inGroup } from './data.js';
+import { EXERCISES, TEMPLATES, MUSCLES, MEASURE_KEYS, GROUPS, PARTS, CARDIO_EXTRAS, inGroup } from './data.js';
 import { T } from './i18n.js';
 import { MEDIA, MEDIA_BASE } from './exmedia.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 
 /* =========================================================
    State
@@ -14,7 +14,7 @@ const S = {
   user: null, loaded: false,
   profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [],
   active: null,
-  ui: { histMonth: null, exFilter: 'all', exSearch: '', progMetric: 'e1rm', authTab: 'in' },
+  ui: { histMonth: null, exFilter: 'all', exSub: '', exSearch: '', progMetric: 'e1rm', authTab: 'in' },
 };
 let store;
 
@@ -1109,28 +1109,39 @@ VIEWS.body = () => {
 };
 
 /* ---------- EXERCISES ---------- */
-// When the Legs section is open, split the list under quads / hamstrings / glutes / calves headings
-function groupedRows(list, filter, row) {
-  if (filter !== 'legs') return list.map(row).join('');
-  return LEG_MUSCLES.map((mu) => {
+// Sections that have parts (arms, legs) list their exercises under a heading per part, unless one part is picked
+function groupedRows(list, filter, sub, row) {
+  if (!PARTS[filter] || sub) return list.map(row).join('');
+  return PARTS[filter].map((mu) => {
     const part = list.filter((e) => e.muscle === mu);
     return part.length ? `<p class="list-label">${t('m_' + mu)}</p>${part.map(row).join('')}` : '';
   }).join('');
 }
 
+// Section buttons: one wrapped block (no sideways scrolling), plus a second row of parts when a section has them
+function sectionChips(filter, sub, attrs, withCustom) {
+  const all = allExercises();
+  const count = (g) => (g === 'all' ? all.length : g === 'custom' ? all.filter((e) => !e.builtin).length : all.filter((e) => inGroup(e.muscle, g)).length);
+  const chip = (g, label) => `<button class="chip ${filter === g ? 'chip-solid' : ''}" ${attrs.group}="${g}">${label}<i>${count(g)}</i></button>`;
+  const top = ['all', ...GROUPS, ...(withCustom ? ['custom'] : [])].map((g) => chip(g, g === 'all' ? t('all') : g === 'custom' ? t('custom') : t('m_' + g))).join('');
+  const parts = PARTS[filter]
+    ? `<div class="chips-wrap chips-sub">${[['', t('all')], ...PARTS[filter].map((m) => [m, t('m_' + m)])].map(([m, l]) => `<button class="chip ${sub === m ? 'chip-solid' : ''}" ${attrs.part}="${m}">${l}</button>`).join('')}</div>` : '';
+  return `<div class="chips-wrap chips-main">${top}</div>${parts}`;
+}
+
 VIEWS.exercises = () => {
-  const f = S.ui.exFilter, q = S.ui.exSearch.trim().toLowerCase();
+  const f = S.ui.exFilter, sub = PARTS[f] ? S.ui.exSub : '', q = S.ui.exSearch.trim().toLowerCase();
   const counts = {};
   S.workouts.forEach((w) => w.exercises.forEach((e) => (counts[e.exId] = (counts[e.exId] || 0) + 1)));
-  const list = allExercises().filter((e) => (f === 'all' || (f === 'custom' ? !e.builtin : inGroup(e.muscle, f))) && (!q || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(q)))
+  const list = allExercises().filter((e) => (f === 'all' || (f === 'custom' ? !e.builtin : inGroup(e.muscle, f) && (!sub || e.muscle === sub))) && (!q || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0) || exName(a).localeCompare(exName(b)));
   return {
     title: t('nav_exercises'),
     actions: `<button class="icon-btn" data-act="ex-new" aria-label="${t('new_exercise')}">${icon('plus')}</button>`,
     html: `<div class="page">
       <div class="search">${icon('search')}<input class="input" data-ex-search value="${esc(S.ui.exSearch)}" placeholder="${t('search_ex')}" type="search"/></div>
-      <div class="chips-scroll">${['all', ...GROUPS, 'custom'].map((m) => `<button class="chip ${f === m ? 'chip-solid' : ''}" data-act="ex-filter" data-m="${m}">${m === 'all' ? t('all') : m === 'custom' ? t('custom') : t('m_' + m)}</button>`).join('')}</div>
-      <div class="ex-list">${groupedRows(list, f, (e) => `
+      ${sectionChips(f, sub, { group: 'data-act="ex-filter" data-m', part: 'data-act="ex-sub" data-m' }, true)}
+      <div class="ex-list">${groupedRows(list, f, sub, (e) => `
         <button class="ex-item" data-act="ex-open" data-id="${esc(e.id)}">
           <span class="ex-dot" style="background:var(--m-${e.muscle})"></span>
           <span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}${!e.builtin ? ` · ${t('custom')}` : ''}</small></span>
@@ -1290,23 +1301,23 @@ VIEWS.settings = () => {
    Sheets: picker, more menu, templates, exercise form
    ========================================================= */
 function exercisePicker(onPick, title = t('add_exercise')) {
-  let filter = 'all', q = '';
+  let filter = 'all', sub = '', q = '';
   const recent = [];
   sortedWorkouts().slice(0, 15).forEach((w) => w.exercises.forEach((e) => { if (!recent.includes(e.exId)) recent.push(e.exId); }));
   const listHtml = () => {
     const ql = q.trim().toLowerCase();
-    let list = allExercises().filter((e) => (filter === 'all' || inGroup(e.muscle, filter)) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
+    let list = allExercises().filter((e) => (filter === 'all' || (inGroup(e.muscle, filter) && (!sub || e.muscle === sub))) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
     const rec = !ql && filter === 'all' ? recent.slice(0, 8).map(getEx) : [];
     // the picture button lets you see what the exercise is before choosing it
     const row = (e) => `<div class="ex-row"><button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}</small></span>${icon('plus')}</button><button class="icon-btn sm ex-peek" data-preview="${esc(e.id)}" aria-label="${t('ex_details')}">${icon('image')}</button></div>`;
     list = list.sort((a, b) => exName(a).localeCompare(exName(b)));
-    return `${rec.length ? `<p class="list-label">${t('recent')}</p>${rec.map(row).join('')}<p class="list-label">${t('all_exercises')}</p>` : ''}${groupedRows(list, filter, row) || `<p class="muted center">${t('no_results')}</p>`}
+    return `${rec.length ? `<p class="list-label">${t('recent')}</p>${rec.map(row).join('')}<p class="list-label">${t('all_exercises')}</p>` : ''}${groupedRows(list, filter, sub, row) || `<p class="muted center">${t('no_results')}</p>`}
       <button class="btn btn-dashed" data-new-ex>${icon('plus')}${t('new_exercise')}${ql ? `: “${esc(q)}”` : ''}</button>`;
   };
   openSheet(`<div class="sheet-body picker">
       <div class="sheet-title"><h3>${esc(title)}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <div class="search">${icon('search')}<input class="input" type="search" data-q placeholder="${t('search_ex')}" autofocus/></div>
-      <div class="chips-scroll">${['all', ...GROUPS].map((m) => `<button class="chip ${m === 'all' ? 'chip-solid' : ''}" data-mf="${m}">${m === 'all' ? t('all') : t('m_' + m)}</button>`).join('')}</div>
+      <div data-chips>${sectionChips(filter, sub, { group: 'data-mf', part: 'data-ms' }, false)}</div>
       <div class="ex-list" data-list>${listHtml()}</div>
     </div>`, {
     wide: true,
@@ -1314,8 +1325,12 @@ function exercisePicker(onPick, title = t('add_exercise')) {
       const L = s.querySelector('[data-list]');
       s.querySelector('[data-q]').addEventListener('input', (e) => { q = e.target.value; L.innerHTML = listHtml(); });
       s.addEventListener('click', (e) => {
-        const mf = e.target.closest('[data-mf]');
-        if (mf) { filter = mf.dataset.mf; s.querySelectorAll('[data-mf]').forEach((b) => b.classList.toggle('chip-solid', b === mf)); L.innerHTML = listHtml(); }
+        const mf = e.target.closest('[data-mf]'), ms = e.target.closest('[data-ms]');
+        if (mf || ms) {
+          if (mf) { filter = mf.dataset.mf; sub = ''; } else sub = ms.dataset.ms;
+          s.querySelector('[data-chips]').innerHTML = sectionChips(filter, sub, { group: 'data-mf', part: 'data-ms' }, false);
+          L.innerHTML = listHtml();
+        }
         const pv = e.target.closest('[data-preview]');
         if (pv) { previewSheet(pv.dataset.preview, (id) => { close(); onPick(id); }); return; }
         const p = e.target.closest('[data-pick]');
@@ -1763,7 +1778,8 @@ A['ms-add'] = () => measureSheet();
 A['ms-del'] = (el) => { S.measurements = S.measurements.filter((x) => x.id !== el.dataset.id); unpersist('measurements', el.dataset.id); render(); };
 
 // Exercises
-A['ex-filter'] = (el) => { S.ui.exFilter = el.dataset.m; render(); };
+A['ex-filter'] = (el) => { S.ui.exFilter = el.dataset.m; S.ui.exSub = ''; render(); };
+A['ex-sub'] = (el) => { S.ui.exSub = el.dataset.m; render(); };
 A['ex-open'] = (el) => exerciseSheet(el.dataset.id);
 A['ex-new'] = () => exerciseForm(null);
 
