@@ -12,11 +12,11 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // The site owner. Replace PUT_OWNER_UID_HERE with your account id
+    // The site owner. Replace sgwJTqVeQxa1JBCjLqgKSNYZcNj2 with your account id
     // (open the site, sign in, then Settings -> Account -> tap your account id to copy it).
     // The same id must be written in js/roles.js. You can list more than one id: ['id1', 'id2']
     function isAdmin() {
-      return request.auth != null && request.auth.uid in ['PUT_OWNER_UID_HERE'];
+      return request.auth != null && request.auth.uid in ['sgwJTqVeQxa1JBCjLqgKSNYZcNj2'];
     }
 
     // profile document
