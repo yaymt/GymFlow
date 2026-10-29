@@ -9,6 +9,7 @@ export const isCloud = Boolean(firebaseConfig && firebaseConfig.apiKey && fireba
 
 const clean = (o) => JSON.parse(JSON.stringify(o)); // strips undefined (Firestore rejects it)
 
+const uid_ = () => uid();
 export const uid = () =>
   (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10))
     .replace(/-/g, '').slice(0, 20);
@@ -53,11 +54,30 @@ function localBackend() {
     async putMany(col, list) { const db = getDb(); db[col] = db[col] || {}; list.forEach((o) => (db[col][o.id] = clean(o))); write(db); },
     async remove(col, id) { const db = getDb(); if (db[col]) delete db[col][id]; write(db); },
     async setProfile(p) { const db = getDb(); db.profile = clean(p); write(db); },
-    async deleteAllData() { write(empty()); },
+    async deleteAllData() { const keep = getDb().rewards; const db = empty(); if (keep) db.rewards = keep; write(db); },
+
+    // Stars (local mode keeps them in the same browser; only used for testing the screens)
+    async loadRewards() { return Object.values(getDb().rewards || {}); },
+    async adminUsers() { const p = getDb().profile || {}; return [{ id: 'local', name: p.name || '', email: (session() || {}).email || '', lastSeen: p.lastSeen || null, createdAt: p.createdAt || null }]; },
+    async adminRewards() { return Object.values(getDb().rewards || {}); },
+    async adminUserData() {
+      const db = getDb();
+      const out = { profile: db.profile || {}, rewards: Object.values(db.rewards || {}) };
+      COLLECTIONS.forEach((c) => (out[c] = Object.values(db[c] || {})));
+      return out;
+    },
+    async adminAddReward(uid, { stars, note }) {
+      const db = getDb(); db.rewards = db.rewards || {};
+      const r = { id: uid_(), stars, note: note || '', at: Date.now(), by: 'local' };
+      db.rewards[r.id] = r; write(db); return r;
+    },
+    async adminRemoveReward(uid, id) { const db = getDb(); if (db.rewards) delete db.rewards[id]; write(db); },
   };
 }
 
 /* ---------------- Firebase backend ---------------- */
+const genId = () => uid();
+
 async function cloudBackend() {
   const fb = await import('./vendor/firebase.js');
   const app = fb.initializeApp(firebaseConfig);
@@ -104,6 +124,36 @@ async function cloudBackend() {
     },
     remove: (col, id) => fb.deleteDoc(fb.doc(db, 'users', me(), col, id)),
     setProfile: (p) => fb.setDoc(userDoc(), clean(p), { merge: true }),
+
+    // Stars given by the owner. Members can read their own; only the owner can write (enforced by firestore.rules).
+    async loadRewards() {
+      const snap = await fb.getDocs(fb.collection(db, 'users', me(), 'rewards'));
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    },
+    async adminUsers() {
+      const snap = await fb.getDocs(fb.collection(db, 'users'));
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    },
+    async adminRewards(uid) {
+      const snap = await fb.getDocs(fb.collection(db, 'users', uid, 'rewards'));
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    },
+    async adminUserData(uid) {
+      const out = {};
+      const p = await fb.getDoc(fb.doc(db, 'users', uid));
+      out.profile = p.exists() ? p.data() : {};
+      await Promise.all([...COLLECTIONS, 'rewards'].map(async (c) => {
+        const snap = await fb.getDocs(fb.collection(db, 'users', uid, c));
+        out[c] = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      }));
+      return out;
+    },
+    async adminAddReward(uid, { stars, note }) {
+      const r = { id: genId(), stars, note: note || '', at: Date.now(), by: me() };
+      await fb.setDoc(fb.doc(db, 'users', uid, 'rewards', r.id), r);
+      return r;
+    },
+    adminRemoveReward: (uid, id) => fb.deleteDoc(fb.doc(db, 'users', uid, 'rewards', id)),
     async deleteAllData() {
       for (const c of COLLECTIONS) {
         const snap = await fb.getDocs(fb.collection(db, 'users', me(), c));

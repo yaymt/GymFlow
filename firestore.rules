@@ -1,8 +1,10 @@
 rules_version = '2';
 
 // GymFlow security rules
-// Each signed-in user can read and write ONLY their own data under /users/{their uid}.
-// Paste this into: Firebase console → Firestore Database → Rules → Publish.
+// - Each signed-in user can read and write ONLY their own data under /users/{their uid}.
+// - The site owner (isAdmin) can READ every member's data (to follow their training) and is the only one who can
+//   give or remove stars. Members can read their own stars but can never change them.
+// Paste this into: Firebase console -> Firestore Database -> Rules -> Publish.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -10,14 +12,36 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    // The site owner. Replace PUT_OWNER_UID_HERE with your account id
+    // (open the site, sign in, then Settings -> Account -> tap your account id to copy it).
+    // The same id must be written in js/roles.js. You can list more than one id: ['id1', 'id2']
+    function isAdmin() {
+      return request.auth != null && request.auth.uid in ['PUT_OWNER_UID_HERE'];
+    }
+
     // profile document
     match /users/{uid} {
-      allow read, delete: if isOwner(uid);
+      allow read: if isOwner(uid) || isAdmin();
+      allow delete: if isOwner(uid);
       allow create, update: if isOwner(uid) && request.resource.data.size() < 100;
+
+      // stars: only the owner writes
+      match /rewards/{docId} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create, update: if isAdmin()
+          && request.resource.data.id == docId
+          && request.resource.data.keys().hasOnly(['id', 'stars', 'note', 'at', 'by'])
+          && request.resource.data.stars is int
+          && request.resource.data.stars >= -1000
+          && request.resource.data.stars <= 1000;
+        allow delete: if isAdmin();
+      }
 
       // plans, workouts, bodyweight, measurements, exercises
       match /{collection}/{docId} {
-        allow read, delete: if isOwner(uid)
+        allow read: if (isOwner(uid) || isAdmin())
+          && collection in ['plans', 'workouts', 'bodyweight', 'measurements', 'exercises'];
+        allow delete: if isOwner(uid)
           && collection in ['plans', 'workouts', 'bodyweight', 'measurements', 'exercises'];
         allow create, update: if isOwner(uid)
           && collection in ['plans', 'workouts', 'bodyweight', 'measurements', 'exercises']

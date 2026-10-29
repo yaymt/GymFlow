@@ -2,10 +2,12 @@ import { createStore, isCloud, uid, authErrorKey } from './store.js';
 import { EXERCISES, TEMPLATES, MUSCLES, MEASURE_KEYS, GROUPS, PARTS, CARDIO_EXTRAS, inGroup } from './data.js';
 import { T } from './i18n.js';
 import { MEDIA, MEDIA_BASE } from './exmedia.js';
+import { STEPS_AR } from './exsteps.js';
+import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.6.0';
 
 /* =========================================================
    State
@@ -13,8 +15,9 @@ const VERSION = '1.4.0';
 const S = {
   user: null, loaded: false,
   profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [],
+  rewards: [], adminEx: [],
   active: null,
-  ui: { histMonth: null, exFilter: 'all', exSub: '', exSearch: '', progMetric: 'e1rm', authTab: 'in' },
+  ui: { histMonth: null, exFilter: 'all', exSub: '', exSearch: '', progMetric: 'weight', authTab: 'in' },
 };
 let store;
 
@@ -42,10 +45,8 @@ const fromDisp = (v, u = unit()) => (u === 'lb' ? v / LB : v);
 const r1 = (n) => Math.round(n * 10) / 10;
 const fmtNum = (n) => (n == null || isNaN(n) ? '–' : r1(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
 const fmtW = (kg, withUnit = true) => (kg == null || isNaN(kg) ? '–' : fmtNum(toDisp(kg)) + (withUnit ? ' ' + uLabel() : ''));
-const fmtVol = (kg) => {
-  const v = toDisp(kg);
-  return (v >= 10000 ? (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(v).toLocaleString('en-US')) + ' ' + uLabel();
-};
+// "Total lifted" is always shown in full (e.g. 1,275 kg), never shortened
+const fmtTotal = (kg) => fmtW(kg);
 const num = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.').replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))); return isNaN(n) ? null : n; };
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -73,7 +74,7 @@ const dayName = (i, style = 'short') => new Date(2024, 0, 7 + i).toLocaleDateStr
    Exercises
    ========================================================= */
 const BUILTIN = Object.fromEntries(EXERCISES.map((e) => [e.id, e]));
-const getEx = (id) => BUILTIN[id] || S.exercises.find((e) => e.id === id) || { id, en: id, ar: id, name: t('unknown_ex'), muscle: 'full', equip: 'other', type: 'weight' };
+const getEx = (id) => BUILTIN[id] || S.exercises.find((e) => e.id === id) || S.adminEx.find((e) => e.id === id) || { id, en: id, ar: id, name: t('unknown_ex'), muscle: 'full', equip: 'other', type: 'weight' };
 const exName = (e) => (typeof e === 'string' ? exName(getEx(e)) : e.builtin ? (lang() === 'ar' ? e.ar : e.en) : (e.name || (lang() === 'ar' ? e.ar : e.en)));
 const allExercises = () => [...EXERCISES, ...S.exercises.map((e) => ({ ...e, builtin: false }))];
 const exType = (id) => getEx(id).type || 'weight';
@@ -107,14 +108,15 @@ const itemDefaults = (exId) => {
   return type === 'cardio' ? { sets: 1, reps: '30' } : type === 'time' ? { sets: 3, reps: '45' } : type === 'carry' ? { sets: 3, reps: '30' } : type === 'bodyweight' ? { sets: 3, reps: '10-15' } : { sets: 3, reps: '8-12' };
 };
 
-const e1rm = (w, r) => (!w || !r ? 0 : r === 1 ? w : w * (1 + r / 30));
-
 /* =========================================================
    Workout analytics
    ========================================================= */
 const sortedWorkouts = () => [...S.workouts].sort((a, b) => (b.start || 0) - (a.start || 0));
-const workoutVolume = (w) => (w.exercises || []).reduce((sum, e) => exType(e.exId) === 'weight'
-  ? sum + (e.sets || []).reduce((s, x) => s + (x.w || 0) * (x.r || 0), 0) : sum, 0);
+// Total lifted = the weights you logged added together (reps are not multiplied in)
+const setsTotal = (sets) => (sets || []).reduce((s, x) => s + (x.w || 0), 0);
+const workoutTotal = (w) => (w.exercises || []).reduce((sum, e) => (isLoad(exType(e.exId)) ? sum + setsTotal(e.sets) : sum), 0);
+// personal records from older versions included an estimated 1RM kind; it is no longer shown
+const prsOf = (w) => (w.prs || []).filter((p) => p.kind !== 'e1rm');
 const workoutSets = (w) => (w.exercises || []).reduce((s, e) => s + (e.sets || []).length, 0);
 
 // Best-of stats for types that are not weight × reps
@@ -131,21 +133,18 @@ function otherCells(type, b, exId) {
 const otherGrid = (type, b, exId) => `<div class="pr-grid"><div><small>${t('sessions')}</small><b>${b.sessions}</b></div>${otherCells(type, b, exId)}</div>`;
 
 function bestsFor(exId, excludeId, before = Infinity) {
-  const b = { weight: 0, e1rm: 0, reps: 0, vol: 0, sessions: 0, last: null };
+  const b = { weight: 0, reps: 0, total: 0, sessions: 0, last: null };
   for (const w of S.workouts) {
     if (w.id === excludeId || (w.start || 0) >= before) continue;
     for (const e of w.exercises || []) {
       if (e.exId !== exId) continue;
       b.sessions++;
       if (!b.last || w.start > b.last) b.last = w.start;
-      let vol = 0;
       for (const s of e.sets || []) {
         b.weight = Math.max(b.weight, s.w || 0);
-        b.e1rm = Math.max(b.e1rm, e1rm(s.w || 0, s.r || 0));
         b.reps = Math.max(b.reps, s.r || 0);
-        vol += (s.w || 0) * (s.r || 0);
       }
-      b.vol = Math.max(b.vol, vol);
+      b.total = Math.max(b.total, setsTotal(e.sets));
     }
   }
   return b;
@@ -167,7 +166,7 @@ function weekCounts(weeks = 12) {
     const s = new Date(now); s.setDate(s.getDate() - i * 7);
     const e = new Date(s); e.setDate(e.getDate() + 7);
     const ws = S.workouts.filter((w) => w.start >= s.getTime() && w.start < e.getTime());
-    out.push({ start: s, count: ws.length, volume: ws.reduce((a, w) => a + workoutVolume(w), 0) });
+    out.push({ start: s, count: ws.length, total: ws.reduce((a, w) => a + workoutTotal(w), 0) });
   }
   return out;
 }
@@ -187,7 +186,7 @@ function goalStreak() {
 function recentPRs(limit = 5) {
   const list = [];
   for (const w of sortedWorkouts()) {
-    for (const p of w.prs || []) list.push({ ...p, date: w.start, wid: w.id });
+    for (const p of prsOf(w)) list.push({ ...p, date: w.start, wid: w.id });
     if (list.length >= limit) break;
   }
   return list.slice(0, limit);
@@ -232,23 +231,45 @@ mq.addEventListener?.('change', () => applyAppearance());
    Rest timer (global)
    ========================================================= */
 const REST_KEY = 'gymflow:rest';
-const R = { end: 0, total: 0, tick: null };
+const R = { end: 0, total: 0, tick: null, alarm: null };
+
+// The timer works from an end time (not a counter), so it stays correct after the phone sleeps.
+// While it runs we keep the screen awake and, if allowed, send a notification when the rest is over.
+async function askNotify() {
+  try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch { /* ignore */ }
+}
+async function notifyRestOver() {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const opts = { body: t('rest_done'), icon: 'assets/icon-192.png', tag: 'gymflow-rest', renotify: true, vibrate: [200, 100, 200] };
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (reg) await reg.showNotification(t('app_name'), opts); else new Notification(t('app_name'), opts);
+  } catch { /* ignore */ }
+}
+const armAlarm = () => { clearTimeout(R.alarm); R.alarm = setTimeout(drawRest, Math.max(0, R.end - Date.now()) + 50); };
+const trainingScreen = () => route().name === 'log' && !!S.active;
+
 function startRest(sec) {
   unlockAudio();
+  askNotify();
   R.total = sec; R.end = Date.now() + sec * 1000;
   localStorage.setItem(REST_KEY, JSON.stringify({ end: R.end, total: R.total }));
+  setWake(true);
+  armAlarm();
   runRest();
 }
 function stopRest() {
-  R.end = 0; clearInterval(R.tick); R.tick = null;
+  R.end = 0; clearInterval(R.tick); R.tick = null; clearTimeout(R.alarm);
   localStorage.removeItem(REST_KEY);
   const bar = document.getElementById('restbar');
   if (bar) bar.classList.remove('show');
+  if (!trainingScreen()) setWake(false);
 }
 function adjustRest(d) {
   if (!R.end) return;
   R.end = Math.max(Date.now() + 1000, R.end + d * 1000); R.total = Math.max(R.total + d, 5);
   localStorage.setItem(REST_KEY, JSON.stringify({ end: R.end, total: R.total }));
+  armAlarm();
   drawRest();
 }
 function drawRest() {
@@ -272,9 +293,11 @@ function drawRest() {
   bar.querySelector('.rest-fill').style.transform = `scaleX(${R.total ? left / R.total : 0})`;
   bar.querySelector('.rest-time').textContent = fmtDur(left);
   if (left <= 0) {
+    const away = document.visibilityState !== 'visible';
     stopRest();
     beep();
     toast(t('rest_done'), 'success');
+    if (away) notifyRestOver();
   }
 }
 function runRest() {
@@ -296,7 +319,11 @@ async function setWake(on) {
     } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
   } catch { wakeLock = null; }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && route().name === 'log' && S.active) setWake(true); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (trainingScreen() || R.end) setWake(true);
+  if (R.end) drawRest(); // catch up right away if the rest ended while the screen was off
+});
 
 /* =========================================================
    Router + shell
@@ -320,6 +347,13 @@ const MORE = [
   ['tools', 'tools', 'nav_tools'],
   ['settings', 'settings', 'nav_settings'],
 ];
+
+/* ---------- Stars: given by the owner, shown to each member on Home ---------- */
+const devAdmin = () => { try { return localStorage.getItem('gymflow:dev-admin') === '1'; } catch { return false; } };
+const starsOn = () => isCloud || devAdmin();
+const isAdmin = () => !!S.user && (isCloud ? ADMIN_UIDS.includes(S.user.uid) : devAdmin());
+const starsTotal = () => Math.max(0, S.rewards.reduce((a, r) => a + (Number(r.stars) || 0), 0));
+const moreItems = () => [...(isAdmin() ? [['admin', 'star', 'nav_admin']] : []), ...MORE];
 const navGroup = (r) => ({ workout: 'history', plan: 'plans' }[r] || r);
 
 function shell() {
@@ -328,7 +362,7 @@ function shell() {
     <aside class="rail">
       <a class="brand" href="#/home">${brandMark()}<span>${t('app_name')}</span></a>
       <nav class="rail-nav">
-        ${[...NAV, ...MORE].map(([r, ic, k]) => `<a href="#/${r}" data-nav="${r}">${icon(ic)}<span>${t(k)}</span></a>`).join('')}
+        ${[...NAV, ...moreItems()].map(([r, ic, k]) => `<a href="#/${r}" data-nav="${r}">${icon(ic)}<span>${t(k)}</span></a>`).join('')}
       </nav>
       <div class="rail-foot">
         <div class="who">${icon(isCloud ? 'cloud' : 'device')}<span>${esc(S.profile.name || S.user.email || t('athlete'))}</span></div>
@@ -366,6 +400,7 @@ function render() {
   if (!S.loaded) return;
   if (!document.querySelector('.main-col')) shell();
   const r = route();
+  if (r.name !== 'admin') S.adminEx = [];
   resetCharts();
   const fn = VIEWS[r.name] || VIEWS.home;
   const v = fn(r) || {};
@@ -378,7 +413,7 @@ function render() {
   view.innerHTML = v.html || '';
   document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === navGroup(r.name)));
   document.querySelector('.tabbar')?.classList.toggle('training', !!S.active);
-  setWake(r.name === 'log' && !!S.active);
+  setWake(trainingScreen() || R.end > Date.now());
   if (R.end) runRest();
   mountCharts(view);
   v.after && v.after(view);
@@ -453,6 +488,7 @@ const activePlan = () => S.plans.find((p) => p.active) || null;
 
 /* ---------- HOME ---------- */
 VIEWS.home = () => {
+  refreshRewards();
   const now = new Date();
   const goal = S.profile.weeklyGoal || 4;
   const ws = startOfWeek(now);
@@ -530,12 +566,12 @@ VIEWS.home = () => {
   }
 
   const monthCount = S.workouts.filter((w) => w.date && w.date.slice(0, 7) === dateKey(now).slice(0, 7)).length;
-  const weekVol = weekW.reduce((a, w) => a + workoutVolume(w), 0);
+  const weekVol = weekW.reduce((a, w) => a + workoutTotal(w), 0);
   const weekTime = weekW.reduce((a, w) => a + (w.duration || 0), 0);
   const stats = `<div class="stats">
     <div class="stat">${icon('flame')}<b>${goalStreak()}</b><span>${t('streak_weeks')}</span></div>
     <div class="stat">${icon('calendar')}<b>${monthCount}</b><span>${t('this_month')}</span></div>
-    <div class="stat">${icon('dumbbell')}<b>${fmtVol(weekVol)}</b><span>${t('week_volume')}</span></div>
+    <div class="stat">${icon('dumbbell')}<b>${fmtTotal(weekVol)}</b><span>${t('week_total')}</span></div>
     <div class="stat">${icon('timer')}<b>${fmtDurShort(weekTime)}</b><span>${t('week_time')}</span></div>
   </div>`;
 
@@ -558,7 +594,7 @@ VIEWS.home = () => {
 
   return {
     title: t('nav_home'),
-    html: `<div class="page home">${hero}${resume}<div class="grid-2">${todayHtml}${bwHtml}</div>${stats}<div class="grid-2">${prHtml}${lastHtml}</div></div>`,
+    html: `<div class="page home">${hero}${starsCard()}${resume}<div class="grid-2">${todayHtml}${bwHtml}</div>${stats}<div class="grid-2">${prHtml}${lastHtml}</div></div>`,
   };
 };
 
@@ -568,9 +604,9 @@ function workoutRow(w) {
   const names = (w.exercises || []).map((e) => exName(e.exId));
   return `<a class="wrow" href="#/workout/${w.id}">
     <span class="wrow-date"><b>${new Date(w.start).getDate()}</b><small>${fmtDate(w.start, { month: 'short' })}</small></span>
-    <span class="wrow-main"><b>${esc(w.title || t('workout'))}${(w.prs || []).length ? ` <span class="badge-pr">${icon('trophy')}${w.prs.length}</span>` : ''}</b>
+    <span class="wrow-main"><b>${esc(w.title || t('workout'))}${prsOf(w).length ? ` <span class="badge-pr">${icon('trophy')}${prsOf(w).length}</span>` : ''}</b>
       <small>${esc(names.slice(0, 4).join(SEP()))}${names.length > 4 ? ' +' + (names.length - 4) : ''}</small></span>
-    <span class="wrow-meta"><small>${fmtDurShort(w.duration || 0)}</small><small>${fmtVol(workoutVolume(w))}</small></span>
+    <span class="wrow-meta"><small>${fmtDurShort(w.duration || 0)}</small><small>${fmtTotal(workoutTotal(w))}</small></span>
   </a>`;
 }
 
@@ -853,7 +889,7 @@ async function finishWorkout() {
     id: A.editingId || A.id, date: dateKey(A.start), start: A.start, end, duration: Math.round((end - A.start) / 1000),
     title: (A.title || '').trim() || t('workout'), planId: A.planId, dayId: A.dayId, notes: A.notes || '', exercises,
   };
-  w.volume = workoutVolume(w);
+  w.total = workoutTotal(w);
   // PRs vs everything before this workout
   w.prs = [];
   for (const e of exercises) {
@@ -863,9 +899,7 @@ async function finishWorkout() {
     const work = e.sets.filter((s) => s.kind !== 'warm');
     if (type === 'weight') {
       const maxW = Math.max(0, ...work.map((s) => s.w || 0));
-      const maxE = Math.max(0, ...work.map((s) => e1rm(s.w || 0, s.r || 0)));
       if (maxW > prior.weight + 0.001) w.prs.push({ exId: e.exId, kind: 'weight', value: maxW });
-      else if (maxE > prior.e1rm + 0.01) w.prs.push({ exId: e.exId, kind: 'e1rm', value: r1(maxE) });
     } else if (type === 'bodyweight') {
       const maxR = Math.max(0, ...work.map((s) => s.r || 0));
       if (maxR > prior.reps) w.prs.push({ exId: e.exId, kind: 'reps', value: maxR });
@@ -878,7 +912,7 @@ async function finishWorkout() {
       <div class="summary-top">${icon(w.prs.length ? 'trophy' : 'check', 'summary-ic')}<h3>${w.prs.length ? t('great_prs', { n: w.prs.length }) : t('nice_work')}</h3></div>
       <div class="stats compact">
         <div class="stat"><b>${fmtDurShort(w.duration)}</b><span>${t('duration')}</span></div>
-        <div class="stat"><b>${fmtVol(w.volume)}</b><span>${t('volume')}</span></div>
+        <div class="stat"><b>${fmtTotal(w.total)}</b><span>${t('total_lifted')}</span></div>
         <div class="stat"><b>${sets}</b><span>${t('sets')}</span></div>
       </div>
       ${w.prs.length ? `<ul class="pr-list">${w.prs.map((p) => `<li><span>${icon('trophy')}<span>${esc(exName(p.exId))}<small>${t('pr_' + p.kind)}</small></span></span><b>${prValue(p)}</b></li>`).join('')}</ul>` : ''}
@@ -921,7 +955,7 @@ VIEWS.history = () => {
   }
   const head = Array.from({ length: 7 }, (_, i) => `<span class="cal-h">${dayName((weekStartDay() + i) % 7, 'narrow')}</span>`).join('');
   const monthW = sortedWorkouts().filter((w) => w.date && w.date.startsWith(`${y}-${pad2(mo + 1)}`));
-  const vol = monthW.reduce((a, w) => a + workoutVolume(w), 0);
+  const vol = monthW.reduce((a, w) => a + workoutTotal(w), 0);
   const time = monthW.reduce((a, w) => a + (w.duration || 0), 0);
   const prev = lang() === 'ar' ? 'right' : 'left', next = lang() === 'ar' ? 'left' : 'right';
 
@@ -938,7 +972,7 @@ VIEWS.history = () => {
         <div class="stats compact">
           <div class="stat"><b>${monthW.length}</b><span>${t('workouts')}</span></div>
           <div class="stat"><b>${fmtDurShort(time)}</b><span>${t('time')}</span></div>
-          <div class="stat"><b>${fmtVol(vol)}</b><span>${t('volume')}</span></div>
+          <div class="stat"><b>${fmtTotal(vol)}</b><span>${t('total_lifted')}</span></div>
         </div>
       </section>
       ${monthW.length ? `<div class="wlist">${monthW.map(workoutRow).join('')}</div>` : empty('calendar', t('no_workouts_month'), t('no_workouts_month_body'), `<button class="btn btn-primary" data-act="go-train">${t('start_workout')}</button>`)}
@@ -951,14 +985,14 @@ VIEWS.workout = (r) => {
   const w = S.workouts.find((x) => x.id === r.a);
   if (!w) return { title: t('nav_history'), back: 'history', html: empty('calendar', t('not_found'), '') };
   const prMap = {};
-  (w.prs || []).forEach((p) => (prMap[p.exId] = p));
+  prsOf(w).forEach((p) => (prMap[p.exId] = p));
   const exHtml = w.exercises.map((e) => {
     const type = exType(e.exId);
-    const best = type === 'weight' ? Math.max(0, ...e.sets.map((s) => e1rm(s.w || 0, s.r || 0))) : 0;
+    const exTotal = isLoad(type) ? setsTotal(e.sets) : 0;
     return `<section class="card ex-detail">
       <div class="card-head"><h3><a href="#/progress/${encodeURIComponent(e.exId)}">${esc(exName(e.exId))}</a></h3>${prMap[e.exId] ? `<span class="badge-pr">${icon('trophy')}${t('pr_' + prMap[e.exId].kind)}</span>` : ''}</div>
-      <ol class="set-list">${e.sets.map((s, j) => `<li class="${s.kind === 'warm' ? 'warm' : ''}"><span>${s.kind === 'warm' && type === 'weight' ? 'W' : j + 1}</span><b>${prevText(type, s, unit(), e.exId)}</b>${type === 'weight' && s.w ? `<small>1RM≈${fmtW(e1rm(s.w, s.r))}</small>` : ''}${type === 'cardio' && cardioSpeed(s, e.exId) ? `<small>${fmtNum(cardioSpeed(s, e.exId))} ${t('kmh')}</small>` : ''}</li>`).join('')}</ol>
-      ${best ? `<p class="muted small">${t('best_e1rm')}: ${fmtW(best)}</p>` : ''}
+      <ol class="set-list">${e.sets.map((s, j) => `<li class="${s.kind === 'warm' ? 'warm' : ''}"><span>${s.kind === 'warm' && type === 'weight' ? 'W' : j + 1}</span><b>${prevText(type, s, unit(), e.exId)}</b>${type === 'cardio' && cardioSpeed(s, e.exId) ? `<small>${fmtNum(cardioSpeed(s, e.exId))} ${t('kmh')}</small>` : ''}</li>`).join('')}</ol>
+      ${exTotal ? `<p class="muted small">${t('total_lifted')}: <b>${fmtTotal(exTotal)}</b></p>` : ''}
       ${e.note ? `<p class="note">${icon('note')}${esc(e.note)}</p>` : ''}
     </section>`;
   }).join('');
@@ -969,7 +1003,7 @@ VIEWS.workout = (r) => {
         <p class="muted">${fmtDate(w.start, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${new Date(w.start).toLocaleTimeString(locale(), { hour: 'numeric', minute: '2-digit' })}</p>
         <div class="stats compact">
           <div class="stat"><b>${fmtDurShort(w.duration || 0)}</b><span>${t('duration')}</span></div>
-          <div class="stat"><b>${fmtVol(workoutVolume(w))}</b><span>${t('volume')}</span></div>
+          <div class="stat"><b>${fmtTotal(workoutTotal(w))}</b><span>${t('total_lifted')}</span></div>
           <div class="stat"><b>${workoutSets(w)}</b><span>${t('sets')}</span></div>
         </div>
         ${w.notes ? `<p class="note">${icon('note')}${esc(w.notes)}</p>` : ''}
@@ -1005,9 +1039,8 @@ VIEWS.progress = (r) => {
     const sets = work.length ? work : e.sets;
     return {
       x: w.start, wid: w.id,
-      e1rm: Math.max(0, ...sets.map((s) => e1rm(s.w || 0, s.r || 0))),
       weight: Math.max(0, ...sets.map((s) => s.w || 0)),
-      vol: sets.reduce((a, s) => a + (s.w || 0) * (s.r || 0), 0),
+      total: setsTotal(e.sets),
       reps: Math.max(0, ...sets.map((s) => s.r || 0)),
       dist: Math.max(0, ...sets.map((s) => s.w || 0)),
       speed: Math.max(0, ...sets.map((s) => cardioSpeed(s, sel) || 0)),
@@ -1017,9 +1050,9 @@ VIEWS.progress = (r) => {
 
   const addedLoad = sessions.some((x) => x.weight > 0);
   const cdef = type === 'cardio' ? cardioDef(sel) : null;
-  const metrics = type === 'weight' ? ['e1rm', 'weight', 'vol', 'reps'] : type === 'cardio' ? [...(cdef.dist ? ['dist'] : []), 'reps', ...(cdef.dist === 'km' ? ['speed'] : [])] : type === 'carry' ? ['weight', 'reps'] : type === 'bodyweight' && addedLoad ? ['reps', 'weight'] : ['reps'];
+  const metrics = type === 'weight' ? ['weight', 'total', 'reps'] : type === 'cardio' ? [...(cdef.dist ? ['dist'] : []), 'reps', ...(cdef.dist === 'km' ? ['speed'] : [])] : type === 'carry' ? ['weight', 'reps'] : type === 'bodyweight' && addedLoad ? ['reps', 'weight'] : ['reps'];
   const m = metrics.includes(metric) ? metric : metrics[0];
-  const loadMetric = ['e1rm', 'weight', 'vol'].includes(m);
+  const loadMetric = ['weight', 'total'].includes(m);
   const pts = sessions.map((s) => ({ x: s.x, y: loadMetric ? toDisp(s[m]) : s[m] }));
   const mLabel = (k) => t(type === 'time' && k === 'reps' ? 'met_secs' : type === 'cardio' && k === 'reps' ? 'met_mins' : type === 'carry' && k === 'reps' ? 'met_meters' : 'met_' + k);
   const b = bestsFor(sel);
@@ -1041,10 +1074,10 @@ VIEWS.progress = (r) => {
         <div class="seg seg-sm">${metrics.map((k) => `<button class="${k === m ? 'on' : ''}" data-act="prog-metric" data-m="${k}">${mLabel(k)}</button>`).join('')}</div>
         <div class="chart-wrap">${pts.length ? chartSlot(lineChart, pts, { fmtX: (x) => fmtDate(x, { day: 'numeric', month: 'short' }), fmtY: (y) => fmtNum(y) }) : ''}</div>
         ${type === 'weight' ? `<div class="pr-grid">
-          <div><small>${t('best_e1rm')}</small><b>${fmtW(b.e1rm)}</b></div>
           <div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>
           <div><small>${t('most_reps')}</small><b>${b.reps}</b></div>
-          <div><small>${t('best_volume')}</small><b>${fmtVol(b.vol)}</b></div>
+          <div><small>${t('best_total')}</small><b>${fmtTotal(b.total)}</b></div>
+          <div><small>${t('sessions')}</small><b>${b.sessions}</b></div>
         </div>` : otherGrid(type, b, sel)}
         <details class="sessions">
           <summary>${t('session_log')} (${sessions.length})</summary>
@@ -1052,8 +1085,8 @@ VIEWS.progress = (r) => {
         </details>
       </section>
       <div class="grid-2">
-        <section class="card"><div class="card-head"><h3>${t('weekly_volume')}</h3><span class="muted small">${uLabel()}</span></div>
-          <div class="chart-wrap">${chartSlot(barChart, weeks.map((w) => ({ label: fmtDate(w.start, { day: 'numeric', month: 'numeric' }), value: Math.round(toDisp(w.volume)) })), { height: 180 })}</div></section>
+        <section class="card"><div class="card-head"><h3>${t('weekly_total')}</h3><span class="muted small">${uLabel()}</span></div>
+          <div class="chart-wrap">${chartSlot(barChart, weeks.map((w) => ({ label: fmtDate(w.start, { day: 'numeric', month: 'numeric' }), value: Math.round(toDisp(w.total)) })), { height: 180 })}</div></section>
         <section class="card"><div class="card-head"><h3>${t('weekly_sessions')}</h3><span class="muted small">${t('goal')}: ${S.profile.weeklyGoal || 4}</span></div>
           <div class="chart-wrap">${chartSlot(barChart, weeks.map((w) => ({ label: fmtDate(w.start, { day: 'numeric', month: 'numeric' }), value: w.count, color: w.count >= (S.profile.weeklyGoal || 4) ? 'var(--plate-green)' : 'var(--accent)' })), { height: 180 })}</div></section>
       </div>
@@ -1246,6 +1279,124 @@ function updateTools(v, src) {
   if (src === 'cv-lb') { const l = val('cv-lb'); v.querySelector('[data-tool="cv-kg"]').value = l == null ? '' : r1(l / LB); }
 }
 
+/* ---------- STARS: member side (shown on Home) ---------- */
+let rewardsAt = 0;
+async function refreshRewards(force = false) {
+  if (!starsOn() || !S.user || (!force && Date.now() - rewardsAt < 30000)) return;
+  rewardsAt = Date.now();
+  try {
+    const before = starsTotal();
+    S.rewards = await store.loadRewards();
+    if (starsTotal() !== before && route().name === 'home') render();
+  } catch (e) { console.warn(e); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshRewards(); });
+
+const seenKey = () => `gymflow:stars-seen:${S.user ? S.user.uid : 'x'}`;
+function starsCard() {
+  if (!starsOn()) return '';
+  const total = starsTotal();
+  let seen = 0;
+  try { seen = Number(localStorage.getItem(seenKey())) || 0; } catch { /* ignore */ }
+  const gained = total - seen;
+  if (gained !== 0) { try { localStorage.setItem(seenKey(), String(total)); } catch { /* ignore */ } }
+  if (gained > 0) setTimeout(() => toast(t('new_stars', { n: gained }), 'pr', 4500), 400);
+  const last = [...S.rewards].sort((a, b) => (b.at || 0) - (a.at || 0))[0];
+  const lastTxt = last
+    ? `${t('last_reward')}: <bdi dir="ltr">${last.stars > 0 ? '+' : ''}${last.stars}</bdi>${last.note ? ' · ' + esc(last.note) : ''} · ${fmtDate(last.at, { day: 'numeric', month: 'short' })}`
+    : t('stars_none');
+  return `<section class="stars-card ${gained > 0 ? 'stars-new' : ''}">
+    <div class="stars-big">${icon('star')}<b>${total}</b></div>
+    <div class="stars-info"><h3>${t('your_stars')}</h3><p class="muted small">${lastTxt}</p></div>
+  </section>`;
+}
+
+/* ---------- STARS: owner side (follow members, give stars) ---------- */
+const initials = (n) => (String(n || '?').trim()[0] || '?').toUpperCase();
+const adminDenied = (e) => (e && e.code === 'permission-denied' ? t('admin_denied') : t('err_generic'));
+
+VIEWS.admin = (r) => {
+  if (!isAdmin()) return { title: t('nav_admin'), back: 'home', html: `<div class="page">${empty('star', t('not_found'), '')}</div>` };
+  return r.a ? adminUserView(r.a) : adminListView();
+};
+
+function adminListView() {
+  return {
+    title: t('nav_admin'),
+    html: `<div class="page admin"><p class="muted small">${t('admin_hint')}</p><div id="admin-list" class="wlist"><p class="muted center">${t('loading')}</p></div></div>`,
+    after: async () => {
+      const box = () => document.getElementById('admin-list');
+      try {
+        const users = await store.adminUsers();
+        const totals = await Promise.all(users.map((u) => store.adminRewards(u.id).then((l) => l.reduce((a, x) => a + (Number(x.stars) || 0), 0)).catch(() => 0)));
+        if (!box()) return;
+        const rows = users.map((u, i) => ({ u, stars: Math.max(0, totals[i]) })).sort((a, b) => (b.u.lastSeen || 0) - (a.u.lastSeen || 0));
+        box().innerHTML = rows.length ? rows.map(({ u, stars }) => `<a class="wrow" href="#/admin/${encodeURIComponent(u.id)}">
+            <span class="avatar">${esc(initials(u.name || u.email))}</span>
+            <span class="wrow-main"><b>${esc(u.name || u.email || t('athlete'))}${u.id === S.user.uid ? ` <span class="badge">${t('you')}</span>` : ''}</b><small>${esc(u.email || '')}${u.lastSeen ? ` · ${t('last_active')} ${fmtDate(u.lastSeen, { day: 'numeric', month: 'short' })}` : ''}</small></span>
+            <span class="star-count">${icon('star')}${stars}</span></a>`).join('') : `<p class="muted center">${t('admin_empty')}</p>`;
+      } catch (e) {
+        console.error(e);
+        if (box()) box().innerHTML = `<p class="form-err">${adminDenied(e)}</p>`;
+      }
+    },
+  };
+}
+
+function adminUserView(uid) {
+  return {
+    title: t('nav_admin'), back: 'admin',
+    html: `<div class="page admin"><div id="admin-user" class="admin-user"><p class="muted center">${t('loading')}</p></div></div>`,
+    after: () => loadAdminUser(uid),
+  };
+}
+
+async function loadAdminUser(uid) {
+  const box = () => document.getElementById('admin-user');
+  try {
+    const d = await store.adminUserData(uid);
+    if (!box()) return;
+    S.adminEx = d.exercises || [];
+    const ws = [...(d.workouts || [])].sort((a, b) => (b.start || 0) - (a.start || 0));
+    const rewards = [...(d.rewards || [])].sort((a, b) => (b.at || 0) - (a.at || 0));
+    const total = Math.max(0, rewards.reduce((a, r) => a + (Number(r.stars) || 0), 0));
+    const weekW = ws.filter((w) => w.start >= startOfWeek().getTime());
+    const p = d.profile || {};
+    box().innerHTML = `
+      <section class="card">
+        <div class="adm-head"><span class="avatar lg">${esc(initials(p.name || p.email))}</span>
+          <div class="adm-who"><h3>${esc(p.name || p.email || t('athlete'))}</h3><small class="muted">${esc(p.email || '')}</small>
+          <small class="muted">${p.lastSeen ? `${t('last_active')}: ${fmtDate(p.lastSeen, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</small></div></div>
+        <div class="stats compact">
+          <div class="stat"><b>${ws.length}</b><span>${t('workouts')}</span></div>
+          <div class="stat"><b>${weekW.length}</b><span>${t('sessions_week')}</span></div>
+          <div class="stat"><b>${fmtTotal(weekW.reduce((a, w) => a + workoutTotal(w), 0))}</b><span>${t('week_total')}</span></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>${t('stars')}</h3><span class="star-count big">${icon('star')}${total}</span></div>
+        <form class="star-form" data-form="give-stars" data-uid="${esc(uid)}">
+          <div class="star-quick">${[1, 2, 3, 5, 10].map((n) => `<button type="button" class="chip" data-act="star-quick" data-n="${n}">+${n}</button>`).join('')}</div>
+          <div class="inline-form">
+            <label class="field"><span>${t('stars_count')}</span><input class="input" name="n" inputmode="numeric" value="1" required dir="ltr"/></label>
+            <label class="field"><span>${t('note_optional')}</span><input class="input" name="note" maxlength="80"/></label>
+          </div>
+          <button class="btn btn-primary">${icon('star')}${t('give_stars')}</button>
+          <p class="muted small">${t('stars_minus_hint')}</p>
+        </form>
+        ${rewards.length ? `<ul class="reward-list">${rewards.slice(0, 20).map((r) => `<li><b class="${r.stars < 0 ? 'neg' : 'pos'}" dir="ltr">${r.stars > 0 ? '+' : ''}${r.stars}</b><span>${esc(r.note || '')}<small class="muted">${fmtDate(r.at, { day: 'numeric', month: 'short' })}</small></span><button class="icon-btn sm danger" data-act="star-del" data-uid="${esc(uid)}" data-id="${esc(r.id)}" aria-label="${t('delete')}">${icon('trash')}</button></li>`).join('')}</ul>` : ''}
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>${t('recent_workouts')}</h3></div>
+        ${ws.length ? ws.slice(0, 15).map((w) => `<details class="adm-w"><summary><span><b>${esc(w.title || t('workout'))}</b><small class="muted">${fmtDate(w.start)} · ${fmtDurShort(w.duration || 0)}</small></span><span class="adm-total">${fmtTotal(workoutTotal(w))}</span></summary>
+          <ul class="set-list">${(w.exercises || []).map((e) => `<li><b>${esc(exName(e.exId))}</b><small>${(e.sets || []).map((s) => prevText(exType(e.exId), s, unit(), e.exId)).join(' · ')}</small></li>`).join('')}</ul></details>`).join('') : `<p class="muted">${t('no_workouts_user')}</p>`}
+      </section>`;
+  } catch (e) {
+    console.error(e);
+    if (box()) box().innerHTML = `<p class="form-err">${adminDenied(e)}</p>`;
+  }
+}
+
 /* ---------- SETTINGS ---------- */
 VIEWS.settings = () => {
   const P = S.profile;
@@ -1260,6 +1411,7 @@ VIEWS.settings = () => {
           <div><b>${esc(isCloud ? (S.user.email || '') : t('local_mode'))}</b><small class="muted">${isCloud ? t('cloud_sync_on') : t('local_mode_body')}</small></div>
         </div>
         <label class="field"><span>${t('your_name')}</span><input class="input" data-set="name" value="${esc(P.name || '')}"/></label>
+        ${isCloud ? `<div class="set-row"><span>${t('your_uid')}<small class="muted">${t('uid_hint')}</small></span><button class="btn btn-ghost btn-sm" data-act="copy-uid" dir="ltr">${esc(S.user.uid.slice(0, 8))}… ${icon('copy')}</button></div>` : ''}
         <button class="btn btn-ghost btn-sm" data-act="logout">${icon('logout')}${t('sign_out')}</button>
       </section>
       <section class="card">
@@ -1396,15 +1548,20 @@ function demoHtml(id) {
   const e = getEx(id), m = MEDIA[id];
   const q = encodeURIComponent(`${e.en || exName(e)} exercise form`);
   const video = `<a class="btn btn-ghost btn-sm" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener noreferrer">${icon('video')}${t('demo_video')}</a>`;
-  if (!m) return `<div class="demo demo-none"><p class="muted small">${t('demo_none')}</p>${video}</div>`;
+  // written steps: Arabic (written for this app) when the app is in Arabic, otherwise the English steps that come with the photos
+  const ar = lang() === 'ar' && STEPS_AR[id];
+  const steps = ar || (m && m.steps) || [];
+  const stepsHtml = steps.length
+    ? `<details class="demo-steps ${ar ? 'steps-ar' : ''}" ${ar ? 'open' : ''}><summary>${t('demo_steps')}</summary><ol>${steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
+        ${ar ? '' : `<p class="muted small">${t('demo_credit')}</p>`}</details>` : '';
+  if (!m) return `<div class="demo demo-none"><p class="muted small">${t('demo_none')}</p>${video}${stepsHtml}</div>`;
   return `<div class="demo">
       <div class="demo-stage" data-demo-stage role="img" aria-label="${esc(exName(e))}" title="${t('demo_tap')}">
         ${m.imgs.map((p, i) => `<img src="${MEDIA_BASE}${p}" alt="" class="${i ? '' : 'on'}" draggable="false"/>`).join('')}
         <p class="demo-off" hidden>${t('demo_offline')}</p>
       </div>
       <div class="demo-bar">${video}<span class="muted small">${t('demo_tap')}</span></div>
-      <details class="demo-steps"><summary>${t('demo_steps')}</summary><ol>${m.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
-        <p class="muted small">${t('demo_credit')}</p></details>
+      ${stepsHtml}
     </div>`;
 }
 function mountDemo(sheet) {
@@ -1434,7 +1591,7 @@ function exerciseSheet(id) {
       ${b.sessions ? `<div class="pr-grid">
         <div><small>${t('sessions')}</small><b>${b.sessions}</b></div>
         <div><small>${t('last_done')}</small><b>${fmtDate(b.last, { day: 'numeric', month: 'short' })}</b></div>
-        ${e.type === 'weight' || !e.type ? `<div><small>${t('best_e1rm')}</small><b>${fmtW(b.e1rm)}</b></div><div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>` : otherCells(e.type, b, id)}
+        ${e.type === 'weight' || !e.type ? `<div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>` : otherCells(e.type, b, id)}
       </div>` : `<p class="muted">${t('never_done')}</p>`}
       <div class="row-actions start wrap">
         ${b.sessions ? `<a class="btn btn-primary btn-sm" href="#/progress/${encodeURIComponent(id)}" data-sheet-close>${icon('chart')}${t('view_progress')}</a>` : ''}
@@ -1482,7 +1639,7 @@ function templatesSheet() {
 function moreSheet() {
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${t('more')}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
-      <nav class="more-grid">${MORE.map(([r, ic, k]) => `<a href="#/${r}" data-sheet-close>${icon(ic)}<span>${t(k)}</span></a>`).join('')}</nav>
+      <nav class="more-grid">${moreItems().map(([r, ic, k]) => `<a href="#/${r}" data-sheet-close>${icon(ic)}<span>${t(k)}</span></a>`).join('')}</nav>
       <div class="acct small">${icon(isCloud ? 'cloud' : 'device')}<div><b>${esc(S.profile.name || t('athlete'))}</b><small class="muted">${esc(isCloud ? S.user.email || '' : t('local_mode'))}</small></div></div>
       <button class="btn btn-ghost" data-act="logout" data-sheet-close>${icon('logout')}${t('sign_out')}</button>
     </div>`);
@@ -1545,7 +1702,7 @@ function exportJSON() {
   toast(t('exported'), 'success');
 }
 function exportCSV() {
-  const rows = [['date', 'workout', 'exercise', 'set', 'type', 'weight_kg', 'reps', 'seconds', 'minutes', 'distance', 'distance_unit', 'extra', 'e1rm_kg', 'duration_min']];
+  const rows = [['date', 'workout', 'exercise', 'set', 'type', 'weight_kg', 'reps', 'seconds', 'minutes', 'distance', 'distance_unit', 'extra', 'duration_min']];
   sortedWorkouts().reverse().forEach((w) => w.exercises.forEach((e) => e.sets.forEach((s, j) => {
     const type = exType(e.exId), c = type === 'cardio' ? cardioDef(e.exId) : null;
     rows.push([
@@ -1557,7 +1714,7 @@ function exportCSV() {
       type === 'cardio' ? (c.dist ? (s.w ?? '') : '') : type === 'carry' ? (s.r ?? '') : '',
       type === 'cardio' ? (c.dist || '') : type === 'carry' ? 'm' : '',
       type === 'cardio' && c.extra ? `${c.extra}=${s.x ?? ''}` : '',
-      type === 'weight' ? r1(e1rm(s.w || 0, s.r || 0)) : '', Math.round((w.duration || 0) / 60),
+      Math.round((w.duration || 0) / 60),
     ]);
   })));
   const csv = '﻿' + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -1811,6 +1968,20 @@ A['logout'] = async () => {
   await store.signOut();
 };
 
+A['star-quick'] = (el) => { el.closest('form').elements.n.value = el.dataset.n; };
+A['star-del'] = async (el) => {
+  if (!(await confirmDialog({ title: t('star_del_q'), ok: t('delete'), cancel: t('cancel'), danger: true }))) return;
+  try {
+    await store.adminRemoveReward(el.dataset.uid, el.dataset.id);
+    toast(t('deleted'), 'success');
+    loadAdminUser(el.dataset.uid);
+    if (el.dataset.uid === S.user.uid) refreshRewards(true);
+  } catch (e) { toast(adminDenied(e), 'error'); }
+};
+A['copy-uid'] = async () => {
+  try { await navigator.clipboard.writeText(S.user.uid); toast(t('copied'), 'success'); } catch { toast(S.user.uid, 'info', 9000); }
+};
+
 const shellReset = () => { const r = document.querySelector('.main-col'); if (r) document.getElementById('app').innerHTML = ''; };
 
 document.addEventListener('click', (e) => {
@@ -1888,6 +2059,16 @@ document.addEventListener('submit', async (e) => {
       else await store.signIn(String(fd.get('email')).trim(), String(fd.get('pw')));
     } catch (err) { showAuthErr(err); }
     btn.disabled = false; btn.classList.remove('loading');
+  } else if (kind === 'give-stars') {
+    const n = Math.trunc(num(fd.get('n')) ?? 0);
+    if (!n || Math.abs(n) > 1000) { toast(t('enter_valid'), 'error'); return; }
+    const btn = f.querySelector('.btn-primary'); btn.disabled = true;
+    try {
+      await store.adminAddReward(f.dataset.uid, { stars: n, note: String(fd.get('note') || '').trim().slice(0, 80) });
+      toast(t(n > 0 ? 'stars_given' : 'stars_taken', { n: Math.abs(n) }), 'success');
+      await loadAdminUser(f.dataset.uid);
+      if (f.dataset.uid === S.user.uid) refreshRewards(true);
+    } catch (err) { toast(adminDenied(err), 'error'); btn.disabled = false; }
   } else if (kind === 'bw') {
     const v = num(fd.get('v'));
     if (v != null && addBodyweight(v, fd.get('d'))) render();
@@ -1922,7 +2103,7 @@ async function boot() {
     S.user = user;
     if (!user) {
       S.loaded = false;
-      Object.assign(S, { profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [], active: null });
+      Object.assign(S, { profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [], rewards: [], adminEx: [], active: null });
       applyAppearance();
       document.getElementById('app').innerHTML = '';
       renderAuth();
@@ -1941,6 +2122,11 @@ async function boot() {
       if (!S.profile.style && prefs.style) S.profile.style = prefs.style;
       if (S.profile.style) { prefs.style = S.profile.style; savePrefs(); }
       if (!data.profile || !data.profile.createdAt) { S.profile.createdAt = Date.now(); saveProfile(); }
+      // let the owner see who is registered and when they were last here
+      S.profile.email = user.email || S.profile.email || '';
+      S.profile.lastSeen = Date.now();
+      saveProfile();
+      S.rewards = starsOn() ? await store.loadRewards().catch((err) => { console.warn(err); return []; }) : [];
       loadActive();
       S.loaded = true;
       applyAppearance();

@@ -1,6 +1,6 @@
 // Service worker: makes the app load offline (e.g. weak signal inside the gym).
 // Bump VERSION whenever you upload changed files so users get the update.
-const VERSION = 'gymflow-v1.4.0';
+const VERSION = 'gymflow-v1.6.0';
 // Exercise demo images (from the CDN) are kept in their own cache so they survive app updates and work offline once viewed.
 const MEDIA_CACHE = 'gymflow-media';
 const SHELL = [
@@ -13,6 +13,8 @@ const SHELL = [
   './js/i18n.js',
   './js/data.js',
   './js/exmedia.js',
+  './js/exsteps.js',
+  './js/roles.js',
   './js/ui.js',
   './js/charts.js',
   './js/vendor/firebase.js',
@@ -28,6 +30,12 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== MEDIA_CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+});
+
+// Tapping the "rest is over" notification brings the app back
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => (cs.length ? cs[0].focus() : self.clients.openWindow('./'))));
 });
 
 self.addEventListener('fetch', (e) => {
