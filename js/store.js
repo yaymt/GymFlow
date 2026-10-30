@@ -58,7 +58,26 @@ function localBackend() {
 
     // Stars (local mode keeps them in the same browser; only used for testing the screens)
     async loadRewards() { return Object.values(getDb().rewards || {}); },
-    async adminUsers() { const p = getDb().profile || {}; return [{ id: 'local', name: p.name || '', email: (session() || {}).email || '', lastSeen: p.lastSeen || null, createdAt: p.createdAt || null }]; },
+    async adminUsers() { const p = getDb().profile || {}; return [{ id: 'local', name: p.name || '', email: (session() || {}).email || '', username: p.username || '', usernameKey: p.usernameKey || '', lastSeen: p.lastSeen || null, createdAt: p.createdAt || null }]; },
+    async adminUsernames() { const m = {}; Object.entries(getDb().usernames || {}).forEach(([k, v]) => (m[k] = v.uid)); return m; },
+
+    // Permissions given by the owner, and unique usernames
+    async myPerms() { return (getDb().staff || {}).local || {}; },
+    async staffList() { return Object.entries(getDb().staff || {}).map(([id, v]) => ({ ...v, id })); },
+    async staffSet(uid, perms) {
+      const db = getDb(); db.staff = db.staff || {};
+      if (!perms.view && !perms.stars) delete db.staff[uid]; else db.staff[uid] = { uid, view: !!perms.view, stars: !!perms.stars, at: Date.now(), by: 'local' };
+      write(db);
+    },
+    async usernameFree(key) { const u = (getDb().usernames || {})[key]; return !u || u.uid === 'local'; },
+    async claimUsername(name, key, oldKey) {
+      const db = getDb(); db.usernames = db.usernames || {};
+      if (db.usernames[key] && db.usernames[key].uid !== 'local') throw { code: 'username/taken' };
+      if (oldKey && oldKey !== key) delete db.usernames[oldKey];
+      db.usernames[key] = { uid: 'local', name, at: Date.now() };
+      db.profile = { ...(db.profile || {}), username: name, usernameKey: key };
+      write(db);
+    },
     async adminRewards() { return Object.values(getDb().rewards || {}); },
     async adminUserData() {
       const db = getDb();
@@ -66,9 +85,9 @@ function localBackend() {
       COLLECTIONS.forEach((c) => (out[c] = Object.values(db[c] || {})));
       return out;
     },
-    async adminAddReward(uid, { stars, note }) {
+    async adminAddReward(uid, { stars, note, byName }) {
       const db = getDb(); db.rewards = db.rewards || {};
-      const r = { id: uid_(), stars, note: note || '', at: Date.now(), by: 'local' };
+      const r = { id: uid_(), stars, note: note || '', at: Date.now(), by: 'local', byName: byName || '' };
       db.rewards[r.id] = r; write(db); return r;
     },
     async adminRemoveReward(uid, id) { const db = getDb(); if (db.rewards) delete db.rewards[id]; write(db); },
@@ -134,6 +153,41 @@ async function cloudBackend() {
       const snap = await fb.getDocs(fb.collection(db, 'users'));
       return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
     },
+    // username key -> uid, used to show a name only when it really belongs to that account
+    async adminUsernames() {
+      const snap = await fb.getDocs(fb.collection(db, 'usernames'));
+      const m = {};
+      snap.docs.forEach((d) => (m[d.id] = d.data().uid));
+      return m;
+    },
+
+    // Permissions (the owner gives them; a member can read only their own)
+    async myPerms() {
+      const d = await fb.getDoc(fb.doc(db, 'staff', me()));
+      return d.exists() ? d.data() : {};
+    },
+    async staffList() {
+      const snap = await fb.getDocs(fb.collection(db, 'staff'));
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    },
+    async staffSet(uid, perms) {
+      const ref = fb.doc(db, 'staff', uid);
+      if (!perms.view && !perms.stars) return fb.deleteDoc(ref);
+      return fb.setDoc(ref, { uid, view: !!perms.view, stars: !!perms.stars, at: Date.now(), by: me() });
+    },
+
+    // Unique usernames: one document per name, so two people can never hold the same one
+    async usernameFree(key) {
+      const d = await fb.getDoc(fb.doc(db, 'usernames', key));
+      return !d.exists() || d.data().uid === me();
+    },
+    async claimUsername(name, key, oldKey) {
+      const batch = fb.writeBatch(db);
+      batch.set(fb.doc(db, 'usernames', key), { uid: me(), name, at: Date.now() });
+      if (oldKey && oldKey !== key) batch.delete(fb.doc(db, 'usernames', oldKey));
+      batch.set(userDoc(), { username: name, usernameKey: key }, { merge: true });
+      await batch.commit();
+    },
     async adminRewards(uid) {
       const snap = await fb.getDocs(fb.collection(db, 'users', uid, 'rewards'));
       return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
@@ -142,14 +196,20 @@ async function cloudBackend() {
       const out = {};
       const p = await fb.getDoc(fb.doc(db, 'users', uid));
       out.profile = p.exists() ? p.data() : {};
+      // a person who may only give stars cannot read workouts: keep what is allowed and mark the rest
+      out.limited = false;
       await Promise.all([...COLLECTIONS, 'rewards'].map(async (c) => {
-        const snap = await fb.getDocs(fb.collection(db, 'users', uid, c));
-        out[c] = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+        try {
+          const snap = await fb.getDocs(fb.collection(db, 'users', uid, c));
+          out[c] = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+        } catch (e) {
+          if (e && e.code === 'permission-denied' && c !== 'rewards') { out[c] = []; out.limited = true; } else throw e;
+        }
       }));
       return out;
     },
-    async adminAddReward(uid, { stars, note }) {
-      const r = { id: genId(), stars, note: note || '', at: Date.now(), by: me() };
+    async adminAddReward(uid, { stars, note, byName }) {
+      const r = { id: genId(), stars, note: note || '', at: Date.now(), by: me(), byName: byName || '' };
       await fb.setDoc(fb.doc(db, 'users', uid, 'rewards', r.id), r);
       return r;
     },

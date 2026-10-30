@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.6.1';
+const VERSION = '1.7.0';
 
 /* =========================================================
    State
@@ -15,7 +15,7 @@ const VERSION = '1.6.1';
 const S = {
   user: null, loaded: false,
   profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [],
-  rewards: [], adminEx: [],
+  rewards: [], adminEx: [], perms: {},
   active: null,
   ui: { histMonth: null, exFilter: 'all', exSub: '', exSearch: '', progMetric: 'weight', authTab: 'in' },
 };
@@ -351,10 +351,14 @@ const MORE = [
 /* ---------- Stars: given by the owner, shown to each member on Home ---------- */
 const devAdmin = () => { try { return localStorage.getItem('gymflow:dev-admin') === '1'; } catch { return false; } };
 const starsOn = () => isCloud || devAdmin();
-const isAdmin = () => !!S.user && (isCloud ? ADMIN_UIDS.includes(S.user.uid) : devAdmin());
+const namesOn = () => isCloud || devAdmin();
+// the owner (listed in roles.js and in the rules) can do everything; others only what the owner switched on for them
+const isSuper = () => !!S.user && (isCloud ? ADMIN_UIDS.includes(S.user.uid) : devAdmin());
+const can = (p) => isSuper() || !!S.perms[p];
+const hasControl = () => can('view') || can('stars');
 const starsTotal = () => Math.max(0, S.rewards.reduce((a, r) => a + (Number(r.stars) || 0), 0));
-const moreItems = () => [...(isAdmin() ? [['admin', 'star', 'nav_admin']] : []), ...MORE];
-const navGroup = (r) => ({ workout: 'history', plan: 'plans' }[r] || r);
+const moreItems = () => [...(hasControl() ? [['control', 'star', 'nav_control']] : []), ...MORE];
+const navGroup = (r) => ({ workout: 'history', plan: 'plans', admin: 'control' }[r] || r);
 
 function shell() {
   const root = document.getElementById('app');
@@ -400,7 +404,7 @@ function render() {
   if (!S.loaded) return;
   if (!document.querySelector('.main-col')) shell();
   const r = route();
-  if (r.name !== 'admin') S.adminEx = [];
+  if (r.name !== 'control' && r.name !== 'admin') S.adminEx = [];
   resetCharts();
   const fn = VIEWS[r.name] || VIEWS.home;
   const v = fn(r) || {};
@@ -594,7 +598,7 @@ VIEWS.home = () => {
 
   return {
     title: t('nav_home'),
-    html: `<div class="page home">${hero}${starsCard()}${resume}<div class="grid-2">${todayHtml}${bwHtml}</div>${stats}<div class="grid-2">${prHtml}${lastHtml}</div></div>`,
+    html: `<div class="page home">${hero}${starsCard()}${nameBanner()}${resume}<div class="grid-2">${todayHtml}${bwHtml}</div>${stats}<div class="grid-2">${prHtml}${lastHtml}</div></div>`,
   };
 };
 
@@ -1311,29 +1315,113 @@ function starsCard() {
   </section>`;
 }
 
-/* ---------- STARS: owner side (follow members, give stars) ---------- */
-const initials = (n) => (String(n || '?').trim()[0] || '?').toUpperCase();
-const adminDenied = (e) => (e && e.code === 'permission-denied' ? t('admin_denied') : t('err_generic'));
-
-VIEWS.admin = (r) => {
-  if (!isAdmin()) return { title: t('nav_admin'), back: 'home', html: `<div class="page">${empty('star', t('not_found'), '')}</div>` };
-  return r.a ? adminUserView(r.a) : adminListView();
+/* ---------- UNIQUE USERNAMES ---------- */
+const NAME_RE = /^[\p{L}\p{N}_.]{3,20}$/u;
+const RESERVED_NAMES = ['admin', 'administrator', 'owner', 'support', 'gymflow', 'root', 'المدير', 'ادمن', 'أدمن', 'المالك'];
+const nameKey = (n) => String(n).trim().toLowerCase();
+const nameError = (v) => {
+  if (v.length < 3) return 'name_short';
+  if (v.length > 20) return 'name_long';
+  if (!NAME_RE.test(v)) return 'name_chars';
+  if (RESERVED_NAMES.includes(nameKey(v))) return 'name_reserved';
+  return '';
 };
 
-function adminListView() {
+function usernameSheet() {
+  let timer = null;
+  const cur = S.profile.username || '';
+  openSheet(`<form class="sheet-body" data-nameform>
+      <div class="sheet-title"><h3>${t('unique_name')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
+      <p class="muted small">${t('name_rules')}</p>
+      <label class="field"><span>${t('unique_name')}</span><input class="input" name="u" value="${esc(cur)}" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" dir="auto" required autofocus/></label>
+      <p class="name-status small" data-status></p>
+      <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary" data-save disabled>${t('save')}</button></div>
+    </form>`, {
+    onClose: () => clearTimeout(timer),
+    onMount: (s, close) => {
+      const input = s.querySelector('[name="u"]'), status = s.querySelector('[data-status]'), save = s.querySelector('[data-save]');
+      let ok = false;
+      const say = (txt, cls = '') => { status.textContent = txt; status.className = `name-status small ${cls}`; };
+      input.addEventListener('input', () => {
+        clearTimeout(timer); ok = false; save.disabled = true;
+        const v = input.value.trim();
+        if (!v || v === cur) return say('');
+        const err = nameError(v);
+        if (err) return say(t(err), 'bad');
+        say(t('name_checking'));
+        timer = setTimeout(async () => {
+          try {
+            const free = await store.usernameFree(nameKey(v));
+            if (input.value.trim() !== v) return;
+            ok = free; save.disabled = !free;
+            say(free ? t('name_free') : t('name_taken'), free ? 'good' : 'bad');
+          } catch (e) { console.warn(e); say(t('name_check_fail'), 'bad'); }
+        }, 350);
+      });
+      s.querySelector('[data-nameform]').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const v = input.value.trim();
+        if (!ok || nameError(v)) return;
+        save.disabled = true;
+        try {
+          await store.claimUsername(v, nameKey(v), S.profile.usernameKey || '');
+          S.profile.username = v; S.profile.usernameKey = nameKey(v);
+          close(); toast(t('name_saved'), 'success'); render();
+        } catch (e) {
+          console.warn(e);
+          say(t(e && (e.code === 'permission-denied' || e.code === 'username/taken') ? 'name_denied' : 'err_generic'), 'bad');
+          save.disabled = false;
+        }
+      });
+    },
+  });
+}
+
+// Shown on Home until the member picks a unique name
+function nameBanner() {
+  if (!namesOn() || S.profile.username) return '';
+  return `<section class="name-banner"><div><h3>${t('pick_name_title')}</h3><p class="muted small">${t('pick_name_body')}</p></div><button class="btn btn-primary btn-sm" data-act="username">${t('choose_name')}</button></section>`;
+}
+
+/* ---------- CONTROL: members, stars, permissions ---------- */
+const initials = (n) => (String(n || '?').trim()[0] || '?').toUpperCase();
+const adminDenied = (e) => (e && e.code === 'permission-denied' ? t('admin_denied') : t('err_generic'));
+// a name counts only if the username really belongs to that account
+const handleOf = (u, names) => (u.username && names && names[u.usernameKey] === u.id ? '@' + u.username : '');
+const permChips = (p) => [p && p.view ? t('perm_view_short') : '', p && p.stars ? t('perm_stars_short') : ''].filter(Boolean).map((x) => `<span class="badge">${esc(x)}</span>`).join(' ');
+const sumStars = (list) => list.reduce((a, x) => a + (Number(x.stars) || 0), 0);
+
+const controlTabs = (cur) => (isSuper() ? `<div class="seg control-tabs">
+    <button class="${cur === 'members' ? 'on' : ''}" data-act="nav" data-to="control">${t('tab_members')}</button>
+    <button class="${cur === 'perms' ? 'on' : ''}" data-act="nav" data-to="control/perms">${t('tab_perms')}</button></div>` : '');
+
+VIEWS.control = (r) => {
+  const none = { title: t('nav_control'), back: 'home', html: `<div class="page">${empty('star', t('not_found'), '')}</div>` };
+  if (!hasControl()) return none;
+  if (r.a === 'perms') return isSuper() ? permsView() : none;
+  return r.a ? memberView(r.a) : membersView();
+};
+VIEWS.admin = VIEWS.control; // links from the first version
+
+function membersView() {
   return {
-    title: t('nav_admin'),
-    html: `<div class="page admin"><p class="muted small">${t('admin_hint')}</p><div id="admin-list" class="wlist"><p class="muted center">${t('loading')}</p></div></div>`,
+    title: t('nav_control'),
+    html: `<div class="page admin">${controlTabs('members')}<p class="muted small">${t('admin_hint')}</p><div id="admin-list" class="wlist"><p class="muted center">${t('loading')}</p></div></div>`,
     after: async () => {
       const box = () => document.getElementById('admin-list');
       try {
-        const users = await store.adminUsers();
-        const totals = await Promise.all(users.map((u) => store.adminRewards(u.id).then((l) => l.reduce((a, x) => a + (Number(x.stars) || 0), 0)).catch(() => 0)));
+        const [users, names] = await Promise.all([store.adminUsers(), store.adminUsernames().catch(() => ({}))]);
+        const [totals, staff] = await Promise.all([
+          Promise.all(users.map((u) => store.adminRewards(u.id).then(sumStars).catch(() => 0))),
+          isSuper() ? store.staffList().catch(() => []) : Promise.resolve([]),
+        ]);
         if (!box()) return;
+        const perms = Object.fromEntries(staff.map((x) => [x.id, x]));
         const rows = users.map((u, i) => ({ u, stars: Math.max(0, totals[i]) })).sort((a, b) => (b.u.lastSeen || 0) - (a.u.lastSeen || 0));
-        box().innerHTML = rows.length ? rows.map(({ u, stars }) => `<a class="wrow" href="#/admin/${encodeURIComponent(u.id)}">
-            <span class="avatar">${esc(initials(u.name || u.email))}</span>
-            <span class="wrow-main"><b>${esc(u.name || u.email || t('athlete'))}${u.id === S.user.uid ? ` <span class="badge">${t('you')}</span>` : ''}</b><small>${esc(u.email || '')}${u.lastSeen ? ` · ${t('last_active')} ${fmtDate(u.lastSeen, { day: 'numeric', month: 'short' })}` : ''}</small></span>
+        box().innerHTML = rows.length ? rows.map(({ u, stars }) => `<a class="wrow" href="#/control/${encodeURIComponent(u.id)}">
+            <span class="avatar">${esc(initials(u.name || u.username || u.email))}</span>
+            <span class="wrow-main"><b>${esc(u.name || u.email || t('athlete'))}${u.id === S.user.uid ? ` <span class="badge">${t('you')}</span>` : ''} ${permChips(perms[u.id])}</b>
+              <small>${esc([handleOf(u, names), u.email].filter(Boolean).join(' · '))}${u.lastSeen ? ` · ${t('last_active')} ${fmtDate(u.lastSeen, { day: 'numeric', month: 'short' })}` : ''}</small></span>
             <span class="star-count">${icon('star')}${stars}</span></a>`).join('') : `<p class="muted center">${t('admin_empty')}</p>`;
       } catch (e) {
         console.error(e);
@@ -1343,39 +1431,42 @@ function adminListView() {
   };
 }
 
-function adminUserView(uid) {
+function memberView(uid) {
   return {
-    title: t('nav_admin'), back: 'admin',
+    title: t('nav_control'), back: 'control',
     html: `<div class="page admin"><div id="admin-user" class="admin-user"><p class="muted center">${t('loading')}</p></div></div>`,
-    after: () => loadAdminUser(uid),
+    after: () => loadMember(uid),
   };
 }
 
-async function loadAdminUser(uid) {
+async function loadMember(uid) {
   const box = () => document.getElementById('admin-user');
   try {
-    const d = await store.adminUserData(uid);
+    const [d, names] = await Promise.all([store.adminUserData(uid), store.adminUsernames().catch(() => ({}))]);
     if (!box()) return;
     S.adminEx = d.exercises || [];
     const ws = [...(d.workouts || [])].sort((a, b) => (b.start || 0) - (a.start || 0));
     const rewards = [...(d.rewards || [])].sort((a, b) => (b.at || 0) - (a.at || 0));
-    const total = Math.max(0, rewards.reduce((a, r) => a + (Number(r.stars) || 0), 0));
+    const total = Math.max(0, sumStars(rewards));
     const weekW = ws.filter((w) => w.start >= startOfWeek().getTime());
-    const p = d.profile || {};
+    const p = { ...(d.profile || {}), id: uid };
+    const canGive = can('stars') && (uid !== S.user.uid || isSuper());
+    const showWork = can('view') && !d.limited;
     box().innerHTML = `
       <section class="card">
-        <div class="adm-head"><span class="avatar lg">${esc(initials(p.name || p.email))}</span>
-          <div class="adm-who"><h3>${esc(p.name || p.email || t('athlete'))}</h3><small class="muted">${esc(p.email || '')}</small>
+        <div class="adm-head"><span class="avatar lg">${esc(initials(p.name || p.username || p.email))}</span>
+          <div class="adm-who"><h3>${esc(p.name || p.email || t('athlete'))}</h3>
+          <small class="muted">${esc([handleOf(p, names), p.email].filter(Boolean).join(' · '))}</small>
           <small class="muted">${p.lastSeen ? `${t('last_active')}: ${fmtDate(p.lastSeen, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}</small></div></div>
-        <div class="stats compact">
+        ${showWork ? `<div class="stats compact">
           <div class="stat"><b>${ws.length}</b><span>${t('workouts')}</span></div>
           <div class="stat"><b>${weekW.length}</b><span>${t('sessions_week')}</span></div>
           <div class="stat"><b>${fmtTotal(weekW.reduce((a, w) => a + workoutTotal(w), 0))}</b><span>${t('week_total')}</span></div>
-        </div>
+        </div>` : `<p class="muted small">${t('limited_note')}</p>`}
       </section>
-      <section class="card">
+      ${can('stars') ? `<section class="card">
         <div class="card-head"><h3>${t('stars')}</h3><span class="star-count big">${icon('star')}${total}</span></div>
-        <form class="star-form" data-form="give-stars" data-uid="${esc(uid)}">
+        ${canGive ? `<form class="star-form" data-form="give-stars" data-uid="${esc(uid)}">
           <div class="star-quick">${[1, 2, 3, 5, 10].map((n) => `<button type="button" class="chip" data-act="star-quick" data-n="${n}">+${n}</button>`).join('')}</div>
           <div class="inline-form">
             <label class="field"><span>${t('stars_count')}</span><input class="input" name="n" inputmode="numeric" value="1" required dir="ltr"/></label>
@@ -1383,18 +1474,87 @@ async function loadAdminUser(uid) {
           </div>
           <button class="btn btn-primary">${icon('star')}${t('give_stars')}</button>
           <p class="muted small">${t('stars_minus_hint')}</p>
-        </form>
-        ${rewards.length ? `<ul class="reward-list">${rewards.slice(0, 20).map((r) => `<li><b class="${r.stars < 0 ? 'neg' : 'pos'}" dir="ltr">${r.stars > 0 ? '+' : ''}${r.stars}</b><span>${esc(r.note || '')}<small class="muted">${fmtDate(r.at, { day: 'numeric', month: 'short' })}</small></span><button class="icon-btn sm danger" data-act="star-del" data-uid="${esc(uid)}" data-id="${esc(r.id)}" aria-label="${t('delete')}">${icon('trash')}</button></li>`).join('')}</ul>` : ''}
-      </section>
-      <section class="card">
+        </form>` : `<p class="muted small">${t('no_self_stars')}</p>`}
+        ${rewards.length ? `<ul class="reward-list">${rewards.slice(0, 20).map((r) => `<li><b class="${r.stars < 0 ? 'neg' : 'pos'}" dir="ltr">${r.stars > 0 ? '+' : ''}${r.stars}</b><span>${esc(r.note || '')}<small class="muted">${fmtDate(r.at, { day: 'numeric', month: 'short' })}${r.byName ? ` · ${esc(r.byName)}` : ''}</small></span>${can('stars') ? `<button class="icon-btn sm danger" data-act="star-del" data-uid="${esc(uid)}" data-id="${esc(r.id)}" aria-label="${t('delete')}">${icon('trash')}</button>` : ''}</li>`).join('')}</ul>` : ''}
+      </section>` : ''}
+      ${showWork ? `<section class="card">
         <div class="card-head"><h3>${t('recent_workouts')}</h3></div>
         ${ws.length ? ws.slice(0, 15).map((w) => `<details class="adm-w"><summary><span><b>${esc(w.title || t('workout'))}</b><small class="muted">${fmtDate(w.start)} · ${fmtDurShort(w.duration || 0)}</small></span><span class="adm-total">${fmtTotal(workoutTotal(w))}</span></summary>
           <ul class="set-list">${(w.exercises || []).map((e) => `<li><b>${esc(exName(e.exId))}</b><small>${(e.sets || []).map((s) => prevText(exType(e.exId), s, unit(), e.exId)).join(' · ')}</small></li>`).join('')}</ul></details>`).join('') : `<p class="muted">${t('no_workouts_user')}</p>`}
-      </section>`;
+      </section>` : ''}`;
   } catch (e) {
     console.error(e);
     if (box()) box().innerHTML = `<p class="form-err">${adminDenied(e)}</p>`;
   }
+}
+
+/* permissions page: only the owner sees it */
+let permCtx = { users: [], perms: {}, names: {} };
+
+function permsView() {
+  return {
+    title: t('nav_control'),
+    html: `<div class="page admin">${controlTabs('perms')}<p class="muted small">${t('perm_page_hint')}</p>
+      <div class="search">${icon('search')}<input class="input" data-perm-search placeholder="${t('perm_search')}" type="search"/></div>
+      <div id="perm-list" class="wlist"><p class="muted center">${t('loading')}</p></div></div>`,
+    after: (view) => {
+      loadPerms();
+      view.querySelector('[data-perm-search]')?.addEventListener('input', (ev) => {
+        const q = ev.target.value.trim().toLowerCase();
+        view.querySelectorAll('.perm-row').forEach((row) => { row.hidden = !!q && !row.dataset.q.includes(q); });
+      });
+    },
+  };
+}
+
+async function loadPerms() {
+  const box = () => document.getElementById('perm-list');
+  try {
+    const [users, staff, names] = await Promise.all([store.adminUsers(), store.staffList(), store.adminUsernames().catch(() => ({}))]);
+    if (!box()) return;
+    permCtx = { users, perms: Object.fromEntries(staff.map((x) => [x.id, x])), names };
+    const sorted = [...users].sort((a, b) => Number(!!(permCtx.perms[b.id])) - Number(!!(permCtx.perms[a.id])) || String(a.name || '').localeCompare(String(b.name || '')));
+    box().innerHTML = sorted.map((u) => {
+      const owner = ADMIN_UIDS.includes(u.id) && isCloud;
+      const handle = handleOf(u, names);
+      const label = u.name || u.email || t('athlete');
+      return `<${owner ? 'div' : `button type="button" data-act="perm-open" data-id="${esc(u.id)}"`} class="wrow perm-row" data-q="${esc(`${label} ${handle} ${u.email || ''}`.toLowerCase())}">
+        <span class="avatar">${esc(initials(label))}</span>
+        <span class="wrow-main"><b>${esc(label)}${u.id === S.user.uid ? ` <span class="badge">${t('you')}</span>` : ''}</b><small>${esc([handle, u.email].filter(Boolean).join(' · '))}</small></span>
+        <span class="perm-tags">${owner ? `<span class="badge">${t('owner')}</span>` : permChips(permCtx.perms[u.id]) || `<span class="muted small">${t('no_perms')}</span>`}</span>
+      </${owner ? 'div' : 'button'}>`;
+    }).join('') || `<p class="muted center">${t('admin_empty')}</p>`;
+  } catch (e) {
+    console.error(e);
+    if (box()) box().innerHTML = `<p class="form-err">${adminDenied(e)}</p>`;
+  }
+}
+
+function permSheet(id) {
+  const u = permCtx.users.find((x) => x.id === id);
+  if (!u) return;
+  const cur = permCtx.perms[id] || {};
+  const label = `${u.name || u.email || t('athlete')} ${handleOf(u, permCtx.names)}`.trim();
+  openSheet(`<form class="sheet-body" data-permform>
+      <div class="sheet-title"><h3>${esc(label)}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
+      <p class="muted small">${t('perm_hint')}</p>
+      <label class="switch"><input type="checkbox" name="view" ${cur.view ? 'checked' : ''}/><span class="switch-ui"></span><span>${t('perm_view')}<small class="muted">${t('perm_view_hint')}</small></span></label>
+      <label class="switch"><input type="checkbox" name="stars" ${cur.stars ? 'checked' : ''}/><span class="switch-ui"></span><span>${t('perm_stars')}<small class="muted">${t('perm_stars_hint')}</small></span></label>
+      <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
+    </form>`, {
+    onMount: (s, close) => s.querySelector('[data-permform]').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const perms = { view: fd.get('view') === 'on', stars: fd.get('stars') === 'on' };
+      const btn = ev.target.querySelector('.btn-primary'); btn.disabled = true;
+      try {
+        await store.staffSet(id, perms);
+        close();
+        toast(t(perms.view || perms.stars ? 'perm_saved' : 'perm_removed'), 'success');
+        loadPerms();
+      } catch (e) { toast(adminDenied(e), 'error'); btn.disabled = false; }
+    }),
+  });
 }
 
 /* ---------- SETTINGS ---------- */
@@ -1411,7 +1571,7 @@ VIEWS.settings = () => {
           <div><b>${esc(isCloud ? (S.user.email || '') : t('local_mode'))}</b><small class="muted">${isCloud ? t('cloud_sync_on') : t('local_mode_body')}</small></div>
         </div>
         <label class="field"><span>${t('your_name')}</span><input class="input" data-set="name" value="${esc(P.name || '')}"/></label>
-        ${isCloud ? `<div class="set-row"><span>${t('your_uid')}<small class="muted">${t('uid_hint')}</small></span><button class="btn btn-ghost btn-sm" data-act="copy-uid" dir="ltr">${esc(S.user.uid.slice(0, 8))}… ${icon('copy')}</button></div>` : ''}
+        ${namesOn() ? `<div class="set-row"><span>${t('unique_name')}<small class="muted">${t('unique_name_hint')}</small></span><button class="btn btn-ghost btn-sm" data-act="username" dir="auto">${S.profile.username ? '@' + esc(S.profile.username) : t('choose_name')} ${icon('edit')}</button></div>` : ''}
         <button class="btn btn-ghost btn-sm" data-act="logout">${icon('logout')}${t('sign_out')}</button>
       </section>
       <section class="card">
@@ -1974,13 +2134,13 @@ A['star-del'] = async (el) => {
   try {
     await store.adminRemoveReward(el.dataset.uid, el.dataset.id);
     toast(t('deleted'), 'success');
-    loadAdminUser(el.dataset.uid);
+    loadMember(el.dataset.uid);
     if (el.dataset.uid === S.user.uid) refreshRewards(true);
   } catch (e) { toast(adminDenied(e), 'error'); }
 };
-A['copy-uid'] = async () => {
-  try { await navigator.clipboard.writeText(S.user.uid); toast(t('copied'), 'success'); } catch { toast(S.user.uid, 'info', 9000); }
-};
+A['username'] = () => usernameSheet();
+A['nav'] = (el) => go(el.dataset.to);
+A['perm-open'] = (el) => permSheet(el.dataset.id);
 
 const shellReset = () => { const r = document.querySelector('.main-col'); if (r) document.getElementById('app').innerHTML = ''; };
 
@@ -2064,9 +2224,9 @@ document.addEventListener('submit', async (e) => {
     if (!n || Math.abs(n) > 1000) { toast(t('enter_valid'), 'error'); return; }
     const btn = f.querySelector('.btn-primary'); btn.disabled = true;
     try {
-      await store.adminAddReward(f.dataset.uid, { stars: n, note: String(fd.get('note') || '').trim().slice(0, 80) });
+      await store.adminAddReward(f.dataset.uid, { stars: n, note: String(fd.get('note') || '').trim().slice(0, 80), byName: S.profile.username || S.profile.name || '' });
       toast(t(n > 0 ? 'stars_given' : 'stars_taken', { n: Math.abs(n) }), 'success');
-      await loadAdminUser(f.dataset.uid);
+      await loadMember(f.dataset.uid);
       if (f.dataset.uid === S.user.uid) refreshRewards(true);
     } catch (err) { toast(adminDenied(err), 'error'); btn.disabled = false; }
   } else if (kind === 'bw') {
@@ -2103,7 +2263,7 @@ async function boot() {
     S.user = user;
     if (!user) {
       S.loaded = false;
-      Object.assign(S, { profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [], rewards: [], adminEx: [], active: null });
+      Object.assign(S, { profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [], rewards: [], adminEx: [], perms: {}, active: null });
       applyAppearance();
       document.getElementById('app').innerHTML = '';
       renderAuth();
@@ -2127,6 +2287,7 @@ async function boot() {
       S.profile.lastSeen = Date.now();
       saveProfile();
       S.rewards = starsOn() ? await store.loadRewards().catch((err) => { console.warn(err); return []; }) : [];
+      S.perms = starsOn() ? await store.myPerms().catch(() => ({})) : {};
       loadActive();
       S.loaded = true;
       applyAppearance();

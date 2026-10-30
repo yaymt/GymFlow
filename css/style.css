@@ -845,3 +845,16 @@ span.setno { display: grid; place-items: center; color: var(--muted); }
 .adm-total { font-weight: 600; font-variant-numeric: tabular-nums; }
 .adm-w .set-list { margin-bottom: 8px; }
 [data-style="rose"] .stars-big, [data-style="rose"] .star-count .ic { color: var(--accent); }
+
+/* ---------- Control page, usernames ---------- */
+.control-tabs { display: flex; }
+.control-tabs button { flex: 1; }
+button.wrow { width: 100%; text-align: start; font: inherit; color: inherit; }
+.perm-row[hidden] { display: none; }
+.perm-tags { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 40%; }
+.wrow-main b .badge { margin-inline-start: 4px; vertical-align: middle; }
+.name-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: var(--r-lg); background: var(--surface-2); border: 1px dashed var(--accent); }
+.name-banner > div { display: grid; gap: 2px; min-width: 0; }
+.name-status { min-height: 1.2em; color: var(--muted); }
+.name-status.good { color: var(--success); }
+.name-status.bad { color: var(--danger); }
