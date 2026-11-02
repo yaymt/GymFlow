@@ -123,14 +123,14 @@ export function confirmDialog({ title, body = '', ok, cancel, danger = false }) 
 }
 
 /* ---------- Prompt (single text field) ---------- */
-export function promptDialog({ title, value = '', ok, cancel, placeholder = '', type = 'text' }) {
+export function promptDialog({ title, value = '', ok, cancel, placeholder = '', type = 'text', required = true }) {
   return new Promise((resolve) => {
     let done = false;
     const finish = (v) => { if (!done) { done = true; resolve(v); } };
     openSheet(`
       <form class="sheet-body confirm" data-form>
         <h3>${esc(title)}</h3>
-        <input class="input" type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" autofocus required />
+        <input class="input" type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" autofocus ${required ? 'required' : ''} />
         <div class="row-actions">
           <button type="button" class="btn btn-ghost" data-sheet-close>${esc(cancel)}</button>
           <button class="btn btn-primary">${esc(ok)}</button>

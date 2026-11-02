@@ -883,3 +883,14 @@ button.wrow { width: 100%; text-align: start; font: inherit; color: inherit; }
 .quick-add .chip { height: 32px; font-size: .8rem; }
 .save-method { display: grid; gap: 10px; }
 .save-method[hidden], .save-method [hidden] { display: none; }
+
+/* ---------- Section rows and editor (v1.10) ---------- */
+.row-cap { font-size: .8rem; color: var(--muted); padding: 4px 6px 0; }
+button.setno { cursor: pointer; }
+button.check-label { text-align: start; background: none; border: 0; padding: 4px; font-size: .9rem; color: var(--text); min-width: 0; }
+button.check-label.muted { color: var(--muted); }
+.part-title { margin: 0; font-weight: 600; }
+.boxes-part { display: grid; gap: 10px; }
+.adv summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.adv { display: grid; gap: 8px; }
+.box-row .box-unit:disabled { opacity: .6; }

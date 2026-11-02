@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 
 /* =========================================================
    State
@@ -105,12 +105,16 @@ const matchGroup = (e, g, sub) => {
 const partsOf = (g) => (g.startsWith('cat:') ? ((secById(g.slice(4)) || {}).parts || []).map((p) => [p.id, p.name]) : (PARTS[g] || []).map((m) => [m, t('m_' + m)]));
 
 // Custom sections: a box you design yourself. "check" = just a tick and a note; "custom" = the boxes you pick.
-const BOXES = [['min', 'box_min'], ['sec', 'box_sec'], ['km', 'box_km'], ['m', 'box_m'], ['reps', 'box_reps'], ['kcal', 'box_kcal']];
+const BOXES = [['w', 'box_kg'], ['reps', 'box_reps'], ['min', 'box_min'], ['sec', 'box_sec'], ['km', 'box_km'], ['m', 'box_m'], ['kcal', 'box_kcal']];
 const isSection = (type) => type === 'check' || type === 'custom';
 const sectionFields = (exId) => getEx(exId).fields || [];
 const boxName = (b) => b.label || t((BOXES.find(([k]) => k === b.k) || [])[1] || 'box_min');
-const boxLabel = (b) => boxName(b) + (b.unit ? ` (${b.unit})` : '');
-const boxText = (b, v) => `${fmtNum(v)} ${b.unit || boxName(b)}`;
+const boxUnit = (b) => (b.k === 'w' ? uLabel() : b.unit || '');
+const boxLabel = (b) => boxName(b) + (boxUnit(b) ? ` (${boxUnit(b)})` : '');
+// the kilogram box follows your unit setting (kg or lb), like the weight of a normal exercise
+const boxText = (b, v, aUnit) => (b.k === 'w' ? `${fmtNum(aUnit === 'lb' ? v * LB : v)} ${t('u_' + (aUnit || unit()))}` : `${fmtNum(v)} ${b.unit || boxName(b)}`);
+const hasLoadBox = (exId) => exType(exId) === 'custom' && sectionFields(exId).some((b) => b.k === 'w');
+const rowTitle = (exId, j) => String((getEx(exId).rowTitles || [])[j] || '').trim();
 const noSets = (exId) => { const ty = exType(exId); return ty === 'cardio' || isSection(ty); };
 const blankSet = (exId) => {
   const st = { w: '', r: '', x: '', done: false };
@@ -130,7 +134,7 @@ const colsBase = (exId) => {
 };
 // column headings can be renamed per exercise (labels), unless the plain names are asked for
 const colsFor = (exId, plain) => {
-  const cols = colsBase(exId), o = !plain && getEx(exId).labels;
+  const cols = colsBase(exId), o = !plain && (getEx(exId).labels || (S.profile.labels || {})[exId]);
   return o ? cols.map((c) => ({ ...c, l: o[c.f] || c.l })) : cols;
 };
 // What a plan item asks for, e.g. "4×8", "30 min", "3×45s"
@@ -154,7 +158,7 @@ const itemDefaults = (exId) => {
 const sortedWorkouts = () => [...S.workouts].sort((a, b) => (b.start || 0) - (a.start || 0));
 // Total lifted = the weights you logged added together (reps are not multiplied in)
 const setsTotal = (sets) => (sets || []).reduce((s, x) => s + (x.w || 0), 0);
-const workoutTotal = (w) => (w.exercises || []).reduce((sum, e) => (isLoad(exType(e.exId)) ? sum + setsTotal(e.sets) : sum), 0);
+const workoutTotal = (w) => (w.exercises || []).reduce((sum, e) => (isLoad(exType(e.exId)) || hasLoadBox(e.exId) ? sum + setsTotal(e.sets) : sum), 0);
 // personal records from older versions included an estimated 1RM kind; it is no longer shown
 const prsOf = (w) => (w.prs || []).filter((p) => p.kind !== 'e1rm');
 const workoutSets = (w) => (w.exercises || []).reduce((s, e) => s + (e.sets || []).length, 0);
@@ -742,7 +746,7 @@ function prevText(type, s, aUnit, exId) {
   if (!s) return '–';
   if (type === 'check') return '✓';
   if (type === 'custom') {
-    const parts = sectionFields(exId).filter((b) => s[b.k] != null && s[b.k] !== '').map((b) => boxText(b, s[b.k]));
+    const parts = sectionFields(exId).filter((b) => s[b.k] != null && s[b.k] !== '').map((b) => boxText(b, s[b.k], aUnit));
     return parts.join(' · ') || '✓';
   }
   const w = isLoad(type) ? (aUnit === 'lb' ? s.w * LB : s.w) : s.w;
@@ -772,15 +776,17 @@ VIEWS.log = () => {
     const prev = lastSetsFor(e.exId, A.editingId, before) || [];
     const rows = e.sets.map((s, j) => {
       const p = prev[j] || prev[prev.length - 1];
-      const ph = (f) => { if (!p) return ''; const v = p[f]; if (v == null) return ''; return f === 'w' && isLoad(type) ? fmtNum(A.unit === 'lb' ? v * LB : v) : fmtNum(v); };
+      const ph = (f) => { if (!p) return ''; const v = p[f]; if (v == null) return ''; return f === 'w' && (isLoad(type) || hasLoadBox(e.exId)) ? fmtNum(A.unit === 'lb' ? v * LB : v) : fmtNum(v); };
       // only weight exercises have warm-up sets; other types just number their rows
       const no = type === 'weight'
         ? `<button class="setno ${s.kind === 'warm' ? 'warm' : ''}" data-act="set-kind" data-i="${i}" data-j="${j}" aria-label="${t('set_type')}">${s.kind === 'warm' ? 'W' : j + 1 - e.sets.slice(0, j).filter((x) => x.kind === 'warm').length}</button>`
+        : section ? `<button type="button" class="setno" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${j + 1}</button>`
         : `<span class="setno">${j + 1}</span>`;
-      return `<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}" data-i="${i}" data-j="${j}">
+      const cap = type === 'custom' && rowTitle(e.exId, j) ? `<div class="row-cap">${esc(rowTitle(e.exId, j))}</div>` : '';
+      return `${cap}<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}" data-i="${i}" data-j="${j}">
         ${no}
         ${nopre ? '' : `<span class="prev">${prev[j] ? prevText(type, prev[j], A.unit, e.exId) : '–'}</span>`}
-        ${type === 'check' ? `<span class="check-label muted">${t('tick_when_done')}</span>` : ''}
+        ${type === 'check' ? `<button type="button" class="check-label ${rowTitle(e.exId, j) ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}">${esc(rowTitle(e.exId, j) || t('tick_when_done'))}</button>` : ''}
         ${cols.map((c) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${c.f}" data-i="${i}" data-j="${j}" value="${esc(s[c.f] ?? '')}" placeholder="${esc(ph(c.f))}" aria-label="${esc(c.l)}"/>`).join('')}
         <button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button>
       </div>`;
@@ -800,8 +806,8 @@ VIEWS.log = () => {
       ${cols.length || !section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span>#</span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
       ${rows}
       <div class="exfoot">
-        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${ex.rowName || (section ? t('add_row') : cardio ? t('add_interval') : t('add_set'))}</button>
-        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${ex.rowName ? t('remove') + ' ' + ex.rowName : (section ? t('remove_row') : cardio ? t('remove_interval') : t('remove_set'))}</button>` : ''}
+        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${section ? t('add_row') : cardio ? t('add_interval') : t('add_set')}</button>
+        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${section ? t('remove_row') : cardio ? t('remove_interval') : t('remove_set')}</button>` : ''}
         <input class="input note-in" data-note="${i}" value="${esc(e.note || '')}" placeholder="${t('note_ph')}"/>
       </div>
     </section>`;
@@ -905,7 +911,7 @@ function editWorkout(id) {
       id: w.id, editingId: w.id, start: w.start, end: w.end, unit: u, title: w.title || '', planId: w.planId || null, dayId: w.dayId || null, notes: w.notes || '',
       exercises: w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets: e.sets.map((s) => {
         const o = { w: conv(s.w, exType(e.exId)), r: s.r == null ? '' : String(s.r), x: s.x == null ? '' : String(s.x), done: true, kind: s.kind };
-        if (exType(e.exId) === 'custom') sectionFields(e.exId).forEach((b) => (o[b.k] = s[b.k] == null ? '' : String(s[b.k])));
+        if (exType(e.exId) === 'custom') sectionFields(e.exId).forEach((b) => (o[b.k] = s[b.k] == null ? '' : b.k === 'w' ? String(r1(u === 'lb' ? s[b.k] * LB : s[b.k])) : String(s[b.k])));
         return o;
       }) })),
     };
@@ -926,7 +932,7 @@ async function finishWorkout() {
       const keys = sectionFields(e.exId).map((b) => b.k);
       const kept = e.sets.filter((s) => s.done || keys.some((k) => num(s[k]) != null)).map((s) => {
         const out = { ok: 1 };
-        keys.forEach((k) => { const v = num(s[k]); if (v != null) out[k] = v; });
+        keys.forEach((k) => { const v = num(s[k]); if (v != null) out[k] = k === 'w' ? fromDisp(v, A.unit) : v; });
         return out;
       });
       return { exId: e.exId, target: e.target || '', rest: null, note: e.note || '', sets: kept };
@@ -1751,124 +1757,107 @@ function previewSheet(id, onChoose) {
 }
 
 /* ---------- CUSTOM SECTIONS: a box you design yourself ----------
-   Everything is editable: the title, where it lives, how it is counted, the name and unit of every box,
-   and what a row is called. Methods you make can be saved and used again. */
+   Order: title, (optional) start from the library, the small boxes you want (kg, reps, minutes, km, your own...).
+   The tick and the note are always there. Rows can be renamed by tapping them in the workout. */
 const userMethods = () => S.profile.methods || [];
 const catalogName = (k) => { const r = BOXES.find(([x]) => x === k); return r ? t(r[1]) : ''; };
 // boxes of a section as the editor shows them; old sections only stored a key, so fall back to the built-in name
-const boxEntries = (fields) => (fields || []).map((b) => ({ k: b.k, label: b.label || catalogName(b.k), unit: b.unit || '' }));
-const presetFields = (m) => ({
-  minutes: [{ label: t('box_min') }],
-  minkm: [{ label: t('box_min') }, { label: t('box_dist'), unit: t('km') }],
-  seconds: [{ label: t('box_sec') }],
-  reps: [{ label: t('box_reps') }],
-}[m] || []).map((b) => ({ k: '', label: b.label, unit: b.unit || '' }));
-const methodOf = (ex) => {
-  if (!ex) return 'check';
-  if (ex.type === 'check') return 'check';
-  if (ex.type === 'custom') return 'mine';
-  if (ex.type === 'weight') return 'weightreps';
-  return 'keep'; // cardio, reps, time... keep its logic, only the headings can change
-};
-// what to copy when starting from an exercise in the library
-const presetOf = (ex) => {
-  if (ex.type === 'check') return 'check';
-  if (ex.type === 'custom') return 'mine';
-  if (ex.type === 'cardio') return ex.dist ? 'minkm' : 'minutes';
-  if (ex.type === 'bodyweight') return 'reps';
-  if (ex.type === 'time') return 'seconds';
-  return 'weightreps';
+const boxEntries = (fields) => (fields || []).map((b) => ({ k: b.k, label: b.label || (b.k === 'w' ? '' : catalogName(b.k)), unit: b.unit || '' }));
+// the boxes that match how a library exercise is counted
+const boxesFor = (ex) => {
+  const mk = (k, unit = '') => ({ k, label: k === 'w' ? '' : catalogName(k), unit });
+  if (ex.type === 'custom') return boxEntries(ex.fields);
+  if (ex.type === 'weight' || ex.type === 'carry') return [mk('w'), mk(ex.type === 'carry' ? 'm' : 'reps')];
+  if (ex.type === 'bodyweight') return [mk('reps')];
+  if (ex.type === 'time') return [mk('sec')];
+  if (ex.type === 'cardio') return [mk('min'), ...(ex.dist ? [mk(ex.dist === 'm' ? 'm' : 'km')] : [])];
+  return [];
 };
 
 function sectionSheet(existing, onSaved) {
-  let method = methodOf(existing);
-  let boxes = existing && existing.type === 'custom' ? boxEntries(existing.fields) : presetFields(method);
+  // sections made in earlier versions that count like a normal exercise keep that logic; only their headings can change
+  const legacy = !!existing && !['check', 'custom'].includes(existing.type);
+  let boxes = existing && existing.type === 'custom' ? boxEntries(existing.fields) : [];
   const labels = { ...((existing && existing.labels) || {}) };
+  const titles = [...((existing && existing.rowTitles) || [])];
   const saved = userMethods();
-  const methodList = ['check', 'minutes', 'minkm', 'seconds', 'reps', 'weightreps', 'mine', ...saved.map((m) => 'm:' + m.id)];
-  if (method === 'keep') methodList.unshift('keep');
-  const methodName = (m) => (m.startsWith('m:') ? (saved.find((x) => 'm:' + x.id === m) || {}).name || '' : t('sm_' + m));
   openSheet(`<form class="sheet-body" data-sectionform>
       <div class="sheet-title"><h3>${existing ? t('section_edit') : t('add_section')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
-      <label class="field"><span>${t('section_title')}</span><input class="input" name="title" value="${esc(existing ? existing.name : '')}" maxlength="40" placeholder="${t('section_title_ph')}" required autofocus/></label>
-      <button type="button" class="btn btn-ghost btn-sm" data-from-lib>${icon('library')}${t('from_library')}</button>
-      ${locationSelect(existing || { muscle: 'section' }, true)}
-      <label class="field"><span>${t('section_method')}</span><select class="input" name="method">
-        ${methodList.slice(0, methodList.indexOf('mine') + 1).map((m) => `<option value="${m}" ${m === method ? 'selected' : ''}>${esc(methodName(m))}</option>`).join('')}
-        ${saved.length ? `<optgroup label="${t('my_methods')}">${saved.map((x) => `<option value="m:${x.id}">${esc(x.name)}</option>`).join('')}</optgroup>` : ''}
-      </select></label>
-      <p class="muted small" data-hint></p>
-      <div class="editor" data-editor></div>
-      <label class="field"><span>${t('row_name')}</span><input class="input" name="rowName" value="${esc(existing ? existing.rowName || '' : '')}" maxlength="14" placeholder="${t('row_name_ph')}"/></label>
-      <div class="save-method" data-save-method hidden>
-        <label class="switch"><input type="checkbox" name="saveMethod"/><span class="switch-ui"></span><span>${t('save_method')}</span></label>
-        <label class="field" data-method-name hidden><span>${t('method_name')}</span><input class="input" name="methodName" maxlength="24"/></label>
+      <label class="field"><span>1. ${t('section_title')}</span><input class="input" name="title" value="${esc(existing ? existing.name : '')}" maxlength="40" placeholder="${t('section_title_ph')}" required autofocus/></label>
+      <button type="button" class="btn btn-ghost btn-sm" data-from-lib>${icon('library')}2. ${t('from_library')}</button>
+      <div class="boxes-part">
+        <p class="part-title">3. ${t('boxes_title')}</p>
+        <p class="muted small">${t('always_check')}</p>
+        <div class="editor" data-editor></div>
+        ${!legacy && saved.length ? `<div class="chips-wrap quick-add"><span class="muted small">${t('my_templates')}</span>${saved.map((x) => `<button type="button" class="chip" data-tpl="${x.id}">${esc(x.name)}</button>`).join('')}</div>` : ''}
+        ${legacy ? '' : `<div class="save-method" data-save-method hidden>
+          <label class="switch"><input type="checkbox" name="saveMethod"/><span class="switch-ui"></span><span>${t('save_method')}</span></label>
+          <label class="field" data-method-name hidden><span>${t('method_name')}</span><input class="input" name="methodName" maxlength="24"/></label>
+        </div>`}
       </div>
+      <details class="adv" ${titles.some(Boolean) ? 'open' : ''}><summary>${t('row_titles')}</summary>
+        <p class="muted small">${t('row_titles_hint')}</p>
+        <div class="inline-form cat-parts">${[0, 1, 2, 3].map((i) => `<label class="field"><span>${t('row_n')} ${i + 1}</span><input class="input" data-rt="${i}" value="${esc(titles[i] || '')}" maxlength="30" placeholder="${t('row_n')} ${i + 1}"/></label>`).join('')}</div>
+      </details>
+      ${locationSelect(existing || { muscle: 'section' }, true)}
       <p class="form-err" data-err role="alert"></p>
       <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
     </form>`, {
     onMount: (s, close) => {
       const form = s.querySelector('[data-sectionform]');
-      const editor = s.querySelector('[data-editor]'), hint = s.querySelector('[data-hint]');
-      const isBoxes = () => !['check', 'weightreps', 'keep'].includes(method);
+      const editor = s.querySelector('[data-editor]');
       const err = (k) => { s.querySelector('[data-err]').textContent = k ? t(k) : ''; };
       const draw = () => {
         err('');
-        hint.textContent = method.startsWith('m:') ? '' : t('sh_' + method);
-        s.querySelector('[data-save-method]').hidden = !isBoxes();
-        if (method === 'check') { editor.innerHTML = ''; return; }
-        if (!isBoxes()) {
-          // a fixed way of counting (weight x reps, or what the exercise already has): only the headings can change
-          const cols = method === 'keep' ? colsFor(existing.id, true) : [{ f: 'w', l: uLabel() }, { f: 'r', l: t('reps') }];
+        if (legacy) {
+          const cols = colsFor(existing.id, true);
           editor.innerHTML = `<p class="muted small">${t('rename_heads')}</p>` + cols.map((c) => `<label class="field"><span>${esc(c.l)}</span><input class="input" data-lab="${c.f}" value="${esc(labels[c.f] || '')}" placeholder="${esc(c.l)}" maxlength="16"/></label>`).join('');
           return;
         }
-        editor.innerHTML = `<p class="muted small">${t('boxes_hint')}</p>
+        const saveBox = s.querySelector('[data-save-method]');
+        if (saveBox) saveBox.hidden = !boxes.length;
+        editor.innerHTML = `${boxes.length ? '' : `<p class="muted small">${t('no_boxes')}</p>`}
           <div class="box-list">${boxes.map((b, i) => `<div class="box-row">
-            <input class="input" data-bl="${i}" value="${esc(b.label)}" placeholder="${t('box_name_ph')}" maxlength="16" aria-label="${t('box_name_ph')}"/>
-            <input class="input box-unit" data-bu="${i}" value="${esc(b.unit)}" placeholder="${t('box_unit_ph')}" maxlength="8" aria-label="${t('box_unit_ph')}"/>
+            <input class="input" data-bl="${i}" value="${esc(b.label)}" placeholder="${esc(b.k === 'w' ? catalogName('w') : t('box_name_ph'))}" maxlength="16" aria-label="${t('box_name_ph')}"/>
+            <input class="input box-unit" data-bu="${i}" value="${esc(b.k === 'w' ? uLabel() : b.unit)}" placeholder="${t('box_unit_ph')}" maxlength="8" ${b.k === 'w' ? 'disabled' : ''} aria-label="${t('box_unit_ph')}"/>
             <button type="button" class="icon-btn sm danger" data-bdel="${i}" aria-label="${t('delete')}">${icon('x')}</button></div>`).join('')}</div>
           <div class="chips-wrap quick-add"><button type="button" class="chip chip-add" data-badd>${icon('plus')}${t('add_box')}</button>
             ${BOXES.map(([k, lk]) => `<button type="button" class="chip" data-bquick="${k}">${t(lk)}</button>`).join('')}</div>`;
       };
-      const addBox = (label = '', unit = '') => {
+      const addBox = (key = '', label = '') => {
         if (boxes.length >= 6) return err('section_too_many');
-        boxes.push({ k: '', label, unit }); draw();
+        if (key && boxes.some((b) => b.k === key)) return err('box_dup');
+        boxes.push({ k: key, label, unit: '' }); draw();
         editor.querySelector(`[data-bl="${boxes.length - 1}"]`)?.focus();
       };
-      const setMethod = (m, keepBoxes) => {
-        method = m;
-        if (m.startsWith('m:')) {
-          const sv = saved.find((x) => 'm:' + x.id === m);
-          boxes = boxEntries(sv ? sv.fields : []);
-          if (sv && sv.rowName && !form.elements.rowName.value) form.elements.rowName.value = sv.rowName;
-        } else if (!keepBoxes && !['mine', 'keep', 'weightreps', 'check'].includes(m)) boxes = presetFields(m);
-        else if (m === 'mine' && !keepBoxes && !boxes.length) boxes = [];
-        draw();
-      };
-      form.elements.method.addEventListener('change', (ev) => setMethod(ev.target.value, false));
       editor.addEventListener('input', (ev) => {
-        const t0 = ev.target;
-        if (t0.dataset.bl != null) boxes[+t0.dataset.bl].label = t0.value;
-        else if (t0.dataset.bu != null) boxes[+t0.dataset.bu].unit = t0.value;
-        else if (t0.dataset.lab != null) labels[t0.dataset.lab] = t0.value.trim();
+        const x = ev.target;
+        if (x.dataset.bl != null) boxes[+x.dataset.bl].label = x.value;
+        else if (x.dataset.bu != null) boxes[+x.dataset.bu].unit = x.value;
+        else if (x.dataset.lab != null) labels[x.dataset.lab] = x.value.trim();
       });
       editor.addEventListener('click', (ev) => {
         const del = ev.target.closest('[data-bdel]'), add = ev.target.closest('[data-badd]'), q = ev.target.closest('[data-bquick]');
         if (del) { boxes.splice(+del.dataset.bdel, 1); draw(); }
         else if (add) addBox();
-        else if (q) addBox(catalogName(q.dataset.bquick));
+        else if (q) {
+          const k = q.dataset.bquick;
+          // keys of built-in boxes are used once; a second box of the same kind gets its own key
+          addBox(boxes.some((b) => b.k === k) ? '' : k, k === 'w' ? '' : catalogName(k));
+        }
       });
-      form.elements.saveMethod.addEventListener('change', (ev) => { s.querySelector('[data-method-name]').hidden = !ev.target.checked; });
-      // starting from an exercise in the library is optional: it only fills in the title and the way of counting
+      s.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => {
+        const sv = saved.find((x) => x.id === b.dataset.tpl);
+        if (sv) { boxes = boxEntries(sv.fields).map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })); draw(); }
+      }));
+      const sm = form.elements.saveMethod;
+      if (sm) sm.addEventListener('change', (ev) => { s.querySelector('[data-method-name]').hidden = !ev.target.checked; });
+      // starting from an exercise in the library is optional: it only fills in the title and the boxes
       s.querySelector('[data-from-lib]').addEventListener('click', () => {
         exercisePicker((id) => {
           const ex = getEx(id);
           if (!form.elements.title.value.trim()) form.elements.title.value = exName(ex);
-          const m = presetOf(ex);
-          if (ex.type === 'custom') boxes = boxEntries(ex.fields);
-          form.elements.method.value = m;
-          setMethod(m, ex.type === 'custom');
+          if (!legacy) { boxes = boxesFor(ex); draw(); }
         }, t('from_library'));
       });
       form.addEventListener('submit', (ev) => {
@@ -1877,27 +1866,32 @@ function sectionSheet(existing, onSaved) {
         const title = String(fd.get('title')).trim();
         if (!title) return err('section_need_title');
         const obj = { id: existing ? existing.id : 'c_' + uid(), name: title, muscle: 'section', equip: 'other', section: true, createdAt: existing?.createdAt || Date.now() };
-        const rn = String(fd.get('rowName') || '').trim();
-        if (rn) obj.rowName = rn;
         applyLocation(obj, String(fd.get('loc') || 'section'));
-        if (method === 'check') obj.type = 'check';
-        else if (method === 'weightreps') obj.type = 'weight';
-        else if (method === 'keep') Object.assign(obj, { type: existing.type, dist: existing.dist, extra: existing.extra });
-        else {
+        const rt = [...titles];
+        s.querySelectorAll('[data-rt]').forEach((inp) => { rt[+inp.dataset.rt] = inp.value.trim(); });
+        while (rt.length && !rt[rt.length - 1]) rt.pop();
+        if (rt.length) obj.rowTitles = rt;
+        if (legacy) {
+          Object.assign(obj, { type: existing.type, dist: existing.dist, extra: existing.extra });
+          const cleaned = Object.fromEntries(Object.entries(labels).filter(([, v]) => v));
+          if (Object.keys(cleaned).length) obj.labels = cleaned;
+        } else {
           const used = new Set(boxes.map((b) => b.k).filter(Boolean));
           let n = 1;
           const fresh = () => { while (used.has('f' + n)) n++; used.add('f' + n); return 'f' + n; };
-          const fields = boxes.filter((b) => b.label.trim() || b.unit.trim()).map((b, i) => ({ k: b.k || fresh(), label: b.label.trim() || `${t('box_name_ph')} ${i + 1}`, ...(b.unit.trim() ? { unit: b.unit.trim() } : {}) }));
-          if (!fields.length) return err('section_need_box');
-          Object.assign(obj, { type: 'custom', fields });
-          if (fd.get('saveMethod') === 'on') {
+          const fields = boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim()).map((b, i) => ({
+            k: b.k || fresh(),
+            label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${i + 1}`),
+            ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}),
+          }));
+          // no boxes at all is fine: the section is then just the tick and the note
+          if (fields.length) Object.assign(obj, { type: 'custom', fields }); else obj.type = 'check';
+          if (fields.length && fd.get('saveMethod') === 'on') {
             const nm = String(fd.get('methodName') || '').trim() || title;
-            S.profile.methods = [...userMethods(), { id: 'm_' + uid().slice(0, 8), name: nm, fields: fields.map((f) => ({ ...f, k: '' })), rowName: rn }];
+            S.profile.methods = [...userMethods(), { id: 'm_' + uid().slice(0, 8), name: nm, fields: fields.map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) }];
             saveProfile();
           }
         }
-        const cleaned = Object.fromEntries(Object.entries(labels).filter(([, v]) => v));
-        if (['weightreps', 'keep'].includes(method) && Object.keys(cleaned).length) obj.labels = cleaned;
         const i = S.exercises.findIndex((x) => x.id === obj.id);
         if (i >= 0) S.exercises[i] = obj; else S.exercises.push(obj);
         persist('exercises', obj);
@@ -1907,6 +1901,28 @@ function sectionSheet(existing, onSaved) {
       });
       draw();
     },
+  });
+}
+
+// "Edit" for a normal exercise from the workout menu: rename its column headings
+function columnsSheet(exId, onDone) {
+  const rec = S.exercises.find((x) => x.id === exId);
+  const cur = (rec ? rec.labels : (S.profile.labels || {})[exId]) || {};
+  const cols = colsFor(exId, true);
+  openSheet(`<form class="sheet-body" data-colform>
+      <div class="sheet-title"><h3>${esc(exName(exId))}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
+      <p class="muted small">${t('rename_heads')}</p>
+      ${cols.map((c) => `<label class="field"><span>${esc(c.l)}</span><input class="input" data-lab="${c.f}" value="${esc(cur[c.f] || '')}" placeholder="${esc(c.l)}" maxlength="16"/></label>`).join('')}
+      <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
+    </form>`, {
+    onMount: (s, close) => s.querySelector('[data-colform]').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const out = {};
+      s.querySelectorAll('[data-lab]').forEach((i) => { const v = i.value.trim(); if (v) out[i.dataset.lab] = v; });
+      if (rec) { if (Object.keys(out).length) rec.labels = out; else delete rec.labels; persist('exercises', rec); }
+      else { S.profile.labels = { ...(S.profile.labels || {}) }; if (Object.keys(out).length) S.profile.labels[exId] = out; else delete S.profile.labels[exId]; saveProfile(); }
+      close(); toast(t('saved'), 'success'); onDone && onDone();
+    }),
   });
 }
 
@@ -2339,10 +2355,10 @@ A['ex-menu'] = (el) => {
       <div class="sheet-title"><h3>${esc(exName(e.exId))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       ${noSets(e.exId) ? '' : `<label class="field"><span>${t('rest_s')}</span><div class="chips-wrap">${[45, 60, 90, 120, 180, 240].map((s) => `<button class="chip ${(e.rest || S.profile.rest || 90) === s ? 'chip-solid' : ''}" data-rest="${s}">${s}</button>`).join('')}</div></label>`}
       <div class="menu-list">
+        <button data-m="edit">${icon('edit')}${t('edit')}</button>
         <button data-m="up" ${i === 0 ? 'disabled' : ''}>${icon('up')}${t('move_up')}</button>
         <button data-m="down" ${i === list.length - 1 ? 'disabled' : ''}>${icon('down')}${t('move_down')}</button>
         <button data-m="swap">${icon('repeat')}${t('replace_ex')}</button>
-        ${isSection(exType(e.exId)) ? `<button data-m="edit-section">${icon('edit')}${t('section_edit')}</button>` : ''}
         <button data-m="info">${icon('chart')}${t('ex_details')}</button>
         <button data-m="del" class="danger">${icon('trash')}${t('remove_ex')}</button>
       </div></div>`, {
@@ -2355,7 +2371,7 @@ A['ex-menu'] = (el) => {
       if (m === 'up' || m === 'down') { const n = i + (m === 'up' ? -1 : 1); [list[i], list[n]] = [list[n], list[i]]; }
       if (m === 'del') list.splice(i, 1);
       if (m === 'swap') return exercisePicker((exId) => { e.exId = exId; saveActive(true); render(); }, t('replace_ex'));
-      if (m === 'edit-section') return sectionSheet(getEx(e.exId), () => { saveActive(true); render(); });
+      if (m === 'edit') return isSection(exType(e.exId)) ? sectionSheet(getEx(e.exId), () => { saveActive(true); render(); }) : columnsSheet(e.exId, () => render());
       if (m === 'info') return exerciseSheet(e.exId);
       saveActive(true); render();
     }),
@@ -2455,6 +2471,20 @@ A['star-del'] = async (el) => {
     loadMember(el.dataset.uid);
     if (el.dataset.uid === S.user.uid) refreshRewards(true);
   } catch (e) { toast(adminDenied(e), 'error'); }
+};
+A['row-title'] = async (el) => {
+  const e = act().exercises[+el.dataset.i], j = +el.dataset.j;
+  const rec = S.exercises.find((x) => x.id === e.exId);
+  if (!rec) return;
+  const v = await promptDialog({ title: t('rename_row'), value: rowTitle(e.exId, j), ok: t('save'), cancel: t('cancel'), placeholder: t('row_title_ph'), required: false });
+  if (v == null) return;
+  const titles = [...(rec.rowTitles || [])];
+  while (titles.length < j) titles.push('');
+  titles[j] = v;
+  while (titles.length && !titles[titles.length - 1]) titles.pop();
+  if (titles.length) rec.rowTitles = titles; else delete rec.rowTitles;
+  persist('exercises', rec);
+  render();
 };
 A['username'] = () => usernameSheet();
 A['nav'] = (el) => go(el.dataset.to);
