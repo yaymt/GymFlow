@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.11.0';
+const VERSION = '1.11.1';
 
 /* =========================================================
    State
@@ -1570,21 +1570,19 @@ const boxesFor = (ex) => {
   return [];
 };
 
-// one row of a workout section: its own title, its own headings and boxes, and the tick
+// one row of a workout section, laid out like a normal exercise row: number, the row's title, small boxes, the tick
 function sectionRowHtml(e, i, s, j, prev, A, st) {
   const fl = rowDef(e.exId, j).fields, title = rowTitle(e.exId, j);
   const pp = prev.find((x, k) => (x.row ?? k) === j);
   const ph = (f) => { const v = pp && pp[f]; if (v == null) return ''; return f === 'w' ? fmtNum(A.unit === 'lb' ? v * LB : v) : fmtNum(v); };
   const sig = fl.map((b) => b.k + boxLabel(b)).join('|');
   const head = fl.length && sig !== st.sig
-    ? `<div class="setrow head nopre cols-${fl.length}" style="--n:${fl.length}"><span>#</span>${fl.map((b) => `<span>${esc(boxLabel(b))}</span>`).join('')}<span>${icon('check')}</span></div>` : '';
+    ? `<div class="setrow head sec cols-${fl.length}" style="--n:${fl.length}"><span>#</span><span>${t('row_head')}</span>${fl.map((b) => `<span>${esc(boxLabel(b))}</span>`).join('')}<span>${icon('check')}</span></div>` : '';
   st.sig = fl.length ? sig : null;
-  const cap = title && fl.length ? `<div class="row-cap">${esc(title)}</div>` : '';
-  const no = `<button type="button" class="setno" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${j + 1}</button>`;
-  const mid = fl.length
-    ? fl.map((b) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${b.k}" data-i="${i}" data-j="${j}" value="${esc(s[b.k] ?? '')}" placeholder="${esc(ph(b.k))}" aria-label="${esc(boxLabel(b))}"/>`).join('')
-    : `<button type="button" class="check-label ${title ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}">${esc(title || t('tick_when_done'))}</button>`;
-  return `${cap}${head}<div class="setrow ${s.done ? 'done' : ''} cols-${fl.length} nopre" style="--n:${fl.length}" data-i="${i}" data-j="${j}">${no}${mid}<button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button></div>`;
+  const no = `<span class="setno">${j + 1}</span>`;
+  const ttl = `<button type="button" class="sec-title ${title ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${esc(title || (fl.length ? '–' : t('tick_when_done')))}</button>`;
+  const boxes = fl.map((b) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${b.k}" data-i="${i}" data-j="${j}" value="${esc(s[b.k] ?? '')}" placeholder="${esc(ph(b.k))}" aria-label="${esc(boxLabel(b))}"/>`).join('');
+  return `${head}<div class="setrow sec ${s.done ? 'done' : ''} cols-${fl.length}" style="--n:${fl.length}" data-i="${i}" data-j="${j}">${no}${ttl}${boxes}<button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button></div>`;
 }
 
 // after a section was edited in the middle of a workout: make sure it has a row for every row it now defines

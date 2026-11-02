@@ -93,6 +93,7 @@ export const T = {
     rename_row: 'عنوان الصف', row_title_ph: 'مثال: إحماء كهربائي',
     rows_title: 'الصفوف والمربعات', rows_hint: 'لكل صف عنوانه ومربعاته، فتقدر تخلي صفًا دقائق وصفًا آخر كيلوغرام وتكرار. ' + 'اضغط «صف جديد» لإضافة صف.',
     add_row_def: 'صف جديد', rows_too_many: 'الحد الأقصى 10 صفوف.',
+    row_head: 'العنوان',
     // home
     greet_morning: 'صباح الخير', greet_day: 'يومك سعيد', greet_evening: 'مساء الخير',
     sessions_week: 'حصص هذا الأسبوع',
@@ -310,6 +311,7 @@ export const T = {
     rename_row: 'Row title', row_title_ph: 'e.g. Electric warm-up',
     rows_title: 'Rows and boxes', rows_hint: 'Each row has its own title and boxes, so one row can be minutes and another kilograms and reps. ' + 'Tap "New row" to add one.',
     add_row_def: 'New row', rows_too_many: 'Up to 10 rows.',
+    row_head: 'Title',
     greet_morning: 'Good morning', greet_day: 'Good afternoon', greet_evening: 'Good evening',
     sessions_week: 'sessions this week',
     goal_hit: 'Weekly goal reached. Every extra session is a bonus.',
