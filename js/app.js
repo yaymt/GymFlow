@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.11.2';
+const VERSION = '1.12.0';
 
 /* =========================================================
    State
@@ -394,6 +394,43 @@ const MORE = [
   ['settings', 'settings', 'nav_settings'],
 ];
 
+/* ---------- Pink theme effects: hearts when you tick, petals when you finish ---------- */
+const isRose = () => document.documentElement.dataset.style === 'rose';
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function burst(x, y, glyphs = ['♥', '♡', '✿'], n = 7) {
+  if (!isRose() || calm()) return;
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement('span');
+    el.className = 'fx-piece';
+    el.textContent = glyphs[i % glyphs.length];
+    el.style.cssText = `left:${x}px;top:${y}px;--dx:${((Math.random() - 0.5) * 100).toFixed(0)}px;--dy:${(-40 - Math.random() * 80).toFixed(0)}px;--rot:${((Math.random() - 0.5) * 90).toFixed(0)}deg;animation-delay:${i * 40}ms;font-size:${12 + Math.random() * 11}px`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
+  }
+}
+function rain(n = 26) {
+  if (!isRose() || calm()) return;
+  const glyphs = ['♥', '♡', '✿', '❀', '✦'];
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement('span');
+    el.className = 'fx-rain';
+    el.textContent = glyphs[i % glyphs.length];
+    el.style.cssText = `left:${(Math.random() * 100).toFixed(1)}vw;font-size:${12 + Math.random() * 14}px;--dur:${(2.6 + Math.random() * 2).toFixed(2)}s;--sway:${((Math.random() - 0.5) * 120).toFixed(0)}px;--spin:${((Math.random() - 0.5) * 600).toFixed(0)}deg;animation-delay:${(Math.random() * 1.1).toFixed(2)}s`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5200);
+  }
+}
+document.addEventListener('click', (e) => {
+  if (!isRose()) return;
+  const bow = e.target.closest('.bow');
+  if (bow) {
+    bow.classList.remove('wiggle'); void bow.getBoundingClientRect(); bow.classList.add('wiggle');
+    const r = bow.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2, ['♥', '♡'], 8);
+  }
+  const star = e.target.closest('.stars-big');
+  if (star) { const r = star.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2, ['★', '✦', '✧'], 10); }
+});
+
 /* ---------- Stars: given by the owner, shown to each member on Home ---------- */
 const devAdmin = () => { try { return localStorage.getItem('gymflow:dev-admin') === '1'; } catch { return false; } };
 const starsOn = () => isCloud || devAdmin();
@@ -565,7 +602,7 @@ VIEWS.home = () => {
     return `<span class="wd ${has ? 'has' : ''} ${today ? 'today' : ''}"><small>${dayName(d.getDay(), 'narrow')}</small><i></i></span>`;
   }).join('');
 
-  const hero = `<section class="hero">
+  const hero = `<section class="hero" style="--bow-scale:${(1 + 0.3 * Math.min(1, done / Math.max(1, goal))).toFixed(2)}">
     <div class="hero-head">
       <p class="muted">${fmtDate(now, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
       <h2 class="greet">${greetHtml}</h2>
@@ -995,6 +1032,7 @@ async function finishWorkout() {
 
   // summary sheet
   const sets = workoutSets(w);
+  if (isRose()) setTimeout(() => rain(w.prs.length ? 44 : 26), 250);
   openSheet(`<div class="sheet-body summary">
       <div class="summary-top">${icon(w.prs.length ? 'trophy' : 'check', 'summary-ic')}<h3>${w.prs.length ? t('great_prs', { n: w.prs.length }) : t('nice_work')}</h3></div>
       <div class="stats compact">
@@ -1600,7 +1638,7 @@ function sectionSheet(existing, onSaved) {
   const legacy = !!existing && !['check', 'custom'].includes(existing.type);
   let rows = existing && !legacy ? sectionRows(existing.id).map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields) })) : [{ title: '', boxes: [] }];
   const labels = { ...((existing && existing.labels) || {}) };
-  const saved = userMethods();
+  let saved = userMethods();
   openSheet(`<form class="sheet-body" data-sectionform>
       <div class="sheet-title"><h3>${existing ? t('section_edit') : t('add_section')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <label class="field"><span>1. ${t('section_title')}</span><input class="input" name="title" value="${esc(existing ? existing.name : '')}" maxlength="40" placeholder="${t('section_title_ph')}" required autofocus/></label>
@@ -1609,9 +1647,9 @@ function sectionSheet(existing, onSaved) {
         <p class="part-title">3. ${legacy ? t('rename_heads') : t('rows_title')}</p>
         ${legacy ? '' : `<p class="muted small">${t('always_check')} ${t('rows_hint')}</p>`}
         <div class="editor" data-editor></div>
-        ${!legacy && saved.length ? `<div class="chips-wrap quick-add"><span class="muted small">${t('my_templates')}</span>${saved.map((x) => `<button type="button" class="chip" data-tpl="${x.id}">${esc(x.name)}</button>`).join('')}</div>` : ''}
+        ${legacy ? '' : `<div class="chips-wrap quick-add" data-tpls ${saved.length ? '' : 'hidden'}></div>`}
         ${legacy ? '' : `<div class="save-method">
-          <label class="switch"><input type="checkbox" name="saveMethod"/><span class="switch-ui"></span><span>${t('save_method')}</span></label>
+          <label class="switch"><input type="checkbox" name="saveMethod"/><span class="switch-ui"></span><span>${t('save_method')}<small class="muted">${t('save_method_explain')}</small></span></label>
           <label class="field" data-method-name hidden><span>${t('method_name')}</span><input class="input" name="methodName" maxlength="24"/></label>
         </div>`}
       </div>
@@ -1675,13 +1713,30 @@ function sectionSheet(existing, onSaved) {
           editor.querySelector(`[data-rtitle="${rows.length - 1}"]`)?.focus();
         }
       });
-      s.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => {
-        const sv = saved.find((x) => x.id === b.dataset.tpl);
-        if (!sv) return;
-        const src = sv.rows || [{ title: '', fields: sv.fields || [] }];
-        rows = src.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) }));
-        draw();
-      }));
+      // saved templates: tap one to use it, tap the small x in its corner to delete it
+      const tplBox = s.querySelector('[data-tpls]');
+      const renderTpls = () => {
+        if (!tplBox) return;
+        tplBox.hidden = !saved.length;
+        tplBox.innerHTML = `<span class="muted small">${t('my_templates')}</span>` + saved.map((x) => `<span class="tpl"><button type="button" class="chip" data-tpl="${x.id}">${esc(x.name)}</button><button type="button" class="tpl-x" data-tpl-del="${x.id}" aria-label="${t('delete')}">×</button></span>`).join('');
+      };
+      if (tplBox) {
+        renderTpls();
+        tplBox.addEventListener('click', async (ev) => {
+          const del = ev.target.closest('[data-tpl-del]'), use = ev.target.closest('[data-tpl]');
+          if (del) {
+            if (!(await confirmDialog({ title: t('tpl_delete_q'), ok: t('delete'), cancel: t('cancel'), danger: true }))) return;
+            S.profile.methods = userMethods().filter((x) => x.id !== del.dataset.tplDel);
+            saveProfile(); saved = userMethods(); renderTpls();
+          } else if (use) {
+            const sv = saved.find((x) => x.id === use.dataset.tpl);
+            if (!sv) return;
+            const src = sv.rows || [{ title: '', fields: sv.fields || [] }];
+            rows = src.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) }));
+            draw();
+          }
+        });
+      }
       const sm = form.elements.saveMethod;
       if (sm) sm.addEventListener('change', (ev) => { s.querySelector('[data-method-name]').hidden = !ev.target.checked; });
       // starting from an exercise in the library is optional: it only fills in the title and the boxes
@@ -2163,6 +2218,7 @@ A['set-done'] = (el) => {
       if ((type === 'weight' || type === 'carry') && num(s.w) == null) s.w = '0';
     }
     s.done = true;
+    { const r = el.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2); }
     // cardio and sections have no rest between "sets"
     if (s.kind !== 'warm' && !noSets(e.exId)) startRest(e.rest || S.profile.rest || 90);
   } else s.done = false;
