@@ -752,7 +752,7 @@ span.setno { display: grid; place-items: center; color: var(--muted); }
   --accent: #F472B6; --accent-ink: #F9A8D4; --on-accent: #3A0A22; --glow: #F472B6;
   --bow: #F9A8D4; --bow-deep: #EC4899;
   --danger: #FF6B8A; --success: #5FD4A8;
-  --steel: #EBC7D7; --grip: #A9798F;
+  --steel: #B9C3CA; --grip: #7D8A94;
   --shadow: 0 12px 32px rgba(20, 4, 12, .5);
 }
 [data-style="rose"][data-theme="light"] {
@@ -760,7 +760,7 @@ span.setno { display: grid; place-items: center; color: var(--muted); }
   --text: #3B1D2B; --muted: #8E6175;
   --accent: #EC4899; --accent-ink: #BE185D; --on-accent: #FFFFFF; --glow: #EC4899;
   --danger: #E0245E; --success: #1F9D6E;
-  --steel: #E2AFC4; --grip: #EBC1D2;
+  --steel: #8C99A3; --grip: #A9B4BC;
   --shadow: 0 10px 30px rgba(236, 72, 153, .14);
 }
 [data-style="rose"] h1, [data-style="rose"] h2, [data-style="rose"] h3 { font-weight: 700; }
@@ -916,7 +916,7 @@ button.check-label.muted { color: var(--muted); }
    ========================================================= */
 /* soft pattern of hearts and flowers behind everything */
 [data-style="rose"] body {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'><g fill='%23F472B6' fill-opacity='.075'><path d='M24 30c-5-9-16-3-10 5l10 10 10-10c6-8-5-14-10-5z'/><circle cx='100' cy='34' r='4'/><circle cx='91' cy='25' r='4'/><circle cx='109' cy='25' r='4'/><circle cx='91' cy='43' r='4'/><circle cx='109' cy='43' r='4'/><path d='M70 104c-5-9-16-3-10 5l10 10 10-10c6-8-5-14-10-5z'/><circle cx='20' cy='112' r='3'/><circle cx='122' cy='104' r='3'/></g><circle cx='100' cy='34' r='2.6' fill='%23FBBF24' fill-opacity='.14'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'><g fill='%23F472B6' fill-opacity='.075'><path d='M24 30c-5-9-16-3-10 5l10 10 10-10c6-8-5-14-10-5z'/><path d='M100 98c-5-9-16-3-10 5l10 10 10-10c6-8-5-14-10-5z'/><path d='M104 24c-3-6-11-2-7 3l7 7 7-7c4-5-4-9-7-3z' fill-opacity='.7'/><path d='M40 110c-3-6-11-2-7 3l7 7 7-7c4-5-4-9-7-3z' fill-opacity='.7'/></g></svg>");
   background-size: 140px;
 }
 
@@ -960,7 +960,7 @@ button.check-label.muted { color: var(--muted); }
 
 /* flowers on the bar */
 [data-style="rose"] .flower-core { fill: #FDE68A; }
-[data-style="rose"] .flower .petals circle { stroke: color-mix(in srgb, #fff 55%, transparent); stroke-width: .8; }
+[data-style="rose"] .flower .petals circle { fill: var(--bow, #F472B6); stroke: var(--bow-deep, #DB2777); stroke-width: .9; }
 [data-style="rose"] .plate-ghost { stroke: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 
 /* cheerful empty screens and a twinkle on the stars card */

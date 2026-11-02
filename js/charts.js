@@ -207,7 +207,7 @@ function barbellRose(done, goal) {
   const flower = (cx, i, filled) => {
     if (!filled) return `<circle cx="${cx.toFixed(1)}" cy="${cy}" r="${r.toFixed(1)}" class="plate-ghost"/>`;
     const petals = [0, 72, 144, 216, 288].map((a) => `<circle cx="${(Math.cos((a * Math.PI) / 180) * r * 0.55).toFixed(1)}" cy="${(Math.sin((a * Math.PI) / 180) * r * 0.55).toFixed(1)}" r="${(r * 0.5).toFixed(1)}"/>`).join('');
-    return `<g transform="translate(${cx.toFixed(1)} ${cy})"><g class="plate flower" style="fill:${PLATE_COLORS[i % 4]}"><g class="petals">${petals}</g><circle r="${(r * 0.28).toFixed(1)}" class="flower-core"/></g></g>`;
+    return `<g transform="translate(${cx.toFixed(1)} ${cy})"><g class="plate flower" ><g class="petals">${petals}</g><circle r="${(r * 0.28).toFixed(1)}" class="flower-core"/></g></g>`;
   };
   let flowers = '';
   for (let i = 0; i < slots; i++) {

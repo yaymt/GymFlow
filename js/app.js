@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.12.0';
+const VERSION = '1.12.2';
 
 /* =========================================================
    State
@@ -670,17 +670,13 @@ VIEWS.home = () => {
     <div class="stat">${icon('timer')}<b>${fmtDurShort(weekTime)}</b><span>${t('week_time')}</span></div>
   </div>`;
 
-  const prs = recentPRs(5);
-  const prHtml = card(`<div class="card-head"><h3>${t('recent_prs')}</h3></div>
-    ${prs.length ? `<ul class="pr-list">${prs.map((p) => `<li><a href="#/workout/${p.wid}">${icon('trophy')}<span>${esc(exName(p.exId))}<small>${t('pr_' + p.kind)}</small></span><b>${prValue(p)}</b></a></li>`).join('')}</ul>` : `<p class="muted">${t('no_prs')}</p>`}`);
-
   const last = sortedWorkouts()[0];
   const lastHtml = last ? card(`<div class="card-head"><h3>${t('last_workout')}</h3><span class="muted small">${fmtDate(last.start)}</span></div>
     ${workoutRow(last)}`) : '';
 
   return {
     title: t('nav_home'),
-    html: `<div class="page home">${hero}${starsCard()}${nameBanner()}${resume}${todayHtml}${stats}<div class="grid-2">${prHtml}${lastHtml}</div></div>`,
+    html: `<div class="page home">${hero}${starsCard()}${nameBanner()}${resume}${todayHtml}${stats}${lastHtml}</div>`,
   };
 };
 
@@ -842,7 +838,7 @@ VIEWS.log = () => {
         <button class="icon-btn sm" data-act="ex-menu" data-i="${i}" aria-label="${t('more')}">${icon('more')}</button>
       </div>
       ${lastLine}
-      ${!section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span>#</span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
+      ${!section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span></span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
       ${rows}
       <div class="exfoot">
         <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${section ? t('add_row') : cardio ? t('add_interval') : t('add_set')}</button>
@@ -1619,7 +1615,7 @@ function sectionRowHtml(e, i, s, j, prev, A, st) {
     ? `<div class="setrow head sec cols-${fl.length}" style="--n:${fl.length}"><span></span><span></span>${fl.map((b) => `<span>${esc(boxLabel(b))}</span>`).join('')}<span>${icon('check')}</span></div>` : '';
   st.sig = fl.length ? sig : null;
   const no = `<span class="setno">${j + 1}</span>`;
-  const ttl = `<button type="button" class="sec-title ${title ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${esc(title || (fl.length ? '–' : t('tick_when_done')))}</button>`;
+  const ttl = `<button type="button" class="sec-title ${title ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${esc(title)}</button>`;
   const boxes = fl.map((b) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${b.k}" data-i="${i}" data-j="${j}" value="${esc(s[b.k] ?? '')}" placeholder="${esc(ph(b.k))}" aria-label="${esc(boxLabel(b))}"/>`).join('');
   return `${head}<div class="setrow sec ${s.done ? 'done' : ''} cols-${fl.length}" style="--n:${fl.length}" data-i="${i}" data-j="${j}">${no}${ttl}${boxes}<button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button></div>`;
 }
