@@ -196,33 +196,3 @@ export function mountCharts(root) {
   });
 }
 export function resetCharts() { SLOTS.clear(); }
-
-// Pink theme: the plates become flowers that bloom, one per session
-function barbellRose(done, goal) {
-  const W = 360, H = 120, cy = 60, sleeveStart = 92;
-  const slots = Math.max(goal, done);
-  const perSide = Math.ceil(slots / 2);
-  const x0 = W - sleeveStart + 4;
-  const step = Math.min(26, (W - 6 - x0) / perSide);
-  const r = Math.min(13, step / 2 - 1);
-  const flower = (cx, i, filled) => {
-    if (!filled) return `<circle cx="${cx.toFixed(1)}" cy="${cy}" r="${r.toFixed(1)}" class="plate-ghost"/>`;
-    const petals = [0, 72, 144, 216, 288].map((a) => `<circle cx="${(Math.cos((a * Math.PI) / 180) * r * 0.55).toFixed(1)}" cy="${(Math.sin((a * Math.PI) / 180) * r * 0.55).toFixed(1)}" r="${(r * 0.5).toFixed(1)}"/>`).join('');
-    return `<g transform="translate(${cx.toFixed(1)} ${cy})"><g class="plate flower" ><g class="petals">${petals}</g><circle r="${(r * 0.28).toFixed(1)}" class="flower-core"/></g></g>`;
-  };
-  let flowers = '';
-  for (let i = 0; i < slots; i++) {
-    const k = Math.floor(i / 2);
-    const cx = x0 + step * (k + 0.5);
-    flowers += flower(i % 2 === 0 ? cx : W - cx, k, i < done);
-  }
-  const rightEnd = Math.min(W - 6, x0 + step * perSide + 8);
-  const leftEnd = W - rightEnd;
-  return `<svg viewBox="0 0 ${W} ${H}" class="barbell" role="img" aria-label="${done}/${goal}">
-    <rect x="${leftEnd}" y="${cy - 5}" width="${rightEnd - leftEnd}" height="10" rx="5" class="bar-steel"/>
-    <rect x="${sleeveStart - 8}" y="${cy - 11}" width="8" height="22" rx="4" class="bar-collar"/>
-    <rect x="${W - sleeveStart}" y="${cy - 11}" width="8" height="22" rx="4" class="bar-collar"/>
-    <rect x="${sleeveStart}" y="${cy - 2.5}" width="${W - 2 * sleeveStart}" height="5" class="bar-grip"/>
-    ${flowers}
-  </svg>`;
-}

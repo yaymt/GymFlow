@@ -132,7 +132,7 @@ export const T = {
     // log
     workout: 'تمرين', workout_name: 'اسم التمرين', edit_workout: 'تعديل التمرين',
     finish: 'إنهاء', finish_workout: 'إنهاء التمرين', discard: 'إلغاء التمرين', cancel_edit: 'إلغاء التعديل',
-    set: 'مجموعة', previous: 'السابق', done: 'تم', target: 'الهدف', set_type: 'تبديل مجموعة إحماء',
+    set: 'مجموعة', done: 'تم', target: 'الهدف', set_type: 'تبديل مجموعة إحماء',
     add_set: 'مجموعة', remove_set: 'حذف مجموعة', note_ph: 'ملاحظة على التمرين',
     workout_notes: 'ملاحظات التمرين', workout_notes_ph: 'كيف كان شعورك؟ نوم، أكل، طاقة…',
     no_ex_in_workout: 'التمرين فاضي', no_ex_in_workout_body: 'أضف أول تمرين وابدأ تسجيل المجموعات.',
@@ -185,7 +185,7 @@ export const T = {
     eq_barbell: 'بار', eq_dumbbell: 'دمبل', eq_machine: 'جهاز', eq_cable: 'كيبل', eq_bodyweight: 'وزن الجسم', eq_kettlebell: 'كتلبل', eq_band: 'مطاط', eq_other: 'أخرى',
     ty_weight: 'وزن × تكرار', ty_bodyweight: 'تكرار (+وزن اختياري)', ty_time: 'مدة بالثواني', ty_carry: 'وزن × مسافة (م)', ty_cardio: 'كارديو: وقت ومسافة',
     ty_weight_short: 'وزن', ty_bodyweight_short: 'وزن الجسم', ty_time_short: 'مدة', ty_carry_short: 'حمل ومسافة', ty_cardio_short: 'وقت ومسافة',
-    enter_cardio: 'اكتب المدة أو المسافة أولًا.', add_interval: 'فترة', remove_interval: 'حذف فترة', last_time: 'المرة السابقة',
+    enter_cardio: 'اكتب المدة أو المسافة أولًا.', add_interval: 'فترة', remove_interval: 'حذف فترة',
     m_short: 'م', floors: 'طابق', kmh: 'كم/س', reps_time: 'تكرار / مدة', met_speed: 'متوسط السرعة', met_meters: 'المسافة (م)',
     dist_unit: 'وحدة المسافة', extra_field: 'حقل إضافي', none: 'بدون',
 
@@ -207,7 +207,7 @@ export const T = {
     style: 'الثيم', style_sub: 'ألوان وخطوط الموقع', st_classic: 'كلاسيكي', st_iron: 'حديد', st_rose: 'وردي',
     your_data: 'بياناتك', data_hint: 'صدّر نسخة احتياطية كاملة (JSON) أو جدولًا يفتح في Excel (CSV).',
     export_json: 'نسخة احتياطية', export_csv: 'تصدير CSV', import_json: 'استيراد نسخة',
-    counts: '{w} تمرين · {p} جداول · {b} قراءة وزن', exported: 'تم التصدير',
+    counts: '{w} تمرين · {p} جداول', exported: 'تم التصدير',
     import_q: 'استيراد النسخة؟', import_body: 'تحتوي {w} تمرين و{p} جداول. ستُدمج مع بياناتك الحالية.',
     imported: 'تم الاستيراد', import_err: 'الملف غير صالح. اختر نسخة احتياطية من جِم فلو.',
     delete_all: 'حذف كل البيانات', delete_all_q: 'حذف كل بياناتك؟', delete_all_body: 'ستُحذف الجداول والتمارين والقياسات نهائيًا.',
@@ -347,7 +347,7 @@ export const T = {
 
     workout: 'Workout', workout_name: 'Workout name', edit_workout: 'Edit workout',
     finish: 'Finish', finish_workout: 'Finish workout', discard: 'Discard workout', cancel_edit: 'Cancel editing',
-    set: 'Set', previous: 'Previous', done: 'Done', target: 'Target', set_type: 'Toggle warm-up set',
+    set: 'Set', done: 'Done', target: 'Target', set_type: 'Toggle warm-up set',
     add_set: 'Set', remove_set: 'Remove set', note_ph: 'Note for this exercise',
     workout_notes: 'Workout notes', workout_notes_ph: 'How did it feel? Sleep, food, energy…',
     no_ex_in_workout: 'This workout is empty', no_ex_in_workout_body: 'Add your first exercise and start logging sets.',
@@ -396,7 +396,7 @@ export const T = {
     eq_barbell: 'Barbell', eq_dumbbell: 'Dumbbell', eq_machine: 'Machine', eq_cable: 'Cable', eq_bodyweight: 'Bodyweight', eq_kettlebell: 'Kettlebell', eq_band: 'Band', eq_other: 'Other',
     ty_weight: 'Weight × reps', ty_bodyweight: 'Reps (+optional weight)', ty_time: 'Duration in seconds', ty_carry: 'Weight × distance (m)', ty_cardio: 'Cardio: time and distance',
     ty_weight_short: 'Weight', ty_bodyweight_short: 'Bodyweight', ty_time_short: 'Timed', ty_carry_short: 'Carry', ty_cardio_short: 'Time + distance',
-    enter_cardio: 'Enter the time or distance first.', add_interval: 'Interval', remove_interval: 'Remove interval', last_time: 'Last time',
+    enter_cardio: 'Enter the time or distance first.', add_interval: 'Interval', remove_interval: 'Remove interval',
     m_short: 'm', floors: 'floors', kmh: 'km/h', reps_time: 'Reps / time', met_speed: 'Avg speed', met_meters: 'Distance (m)',
     dist_unit: 'Distance unit', extra_field: 'Extra field', none: 'None',
 
@@ -416,7 +416,7 @@ export const T = {
     style: 'Style', style_sub: 'Colours and fonts', st_classic: 'Classic', st_iron: 'Iron', st_rose: 'Rose',
     your_data: 'Your data', data_hint: 'Export a full backup (JSON) or a sheet that opens in Excel (CSV).',
     export_json: 'Backup', export_csv: 'Export CSV', import_json: 'Import backup',
-    counts: '{w} workouts · {p} plans · {b} weigh-ins', exported: 'Exported',
+    counts: '{w} workouts · {p} plans', exported: 'Exported',
     import_q: 'Import this backup?', import_body: 'It has {w} workouts and {p} plans. They will be merged with your current data.',
     imported: 'Imported', import_err: 'That file is not valid. Choose a GymFlow backup.',
     delete_all: 'Delete all data', delete_all_q: 'Delete all your data?', delete_all_body: 'Plans, workouts and measurements will be permanently deleted.',

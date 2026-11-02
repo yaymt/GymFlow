@@ -397,7 +397,6 @@ form.inline-form { grid-template-columns: 1fr 1fr auto; }
 .setrow.nopre.cols-1 { --n: 1; } .setrow.nopre.cols-2 { --n: 2; } .setrow.nopre.cols-3 { --n: 3; }
 .setrow.head.nopre span:nth-child(2) { text-align: center; }
 span.setno { display: grid; place-items: center; color: var(--muted); }
-.prev-line { padding: 0 4px; }
 .item-na { text-align: center; color: var(--muted); }
 .cardio-opts { display: grid; gap: 14px; }
 .cardio-opts[hidden] { display: none; }
@@ -407,7 +406,6 @@ span.setno { display: grid; place-items: center; color: var(--muted); }
 .setrow.head span:first-child { text-align: center; }
 .setrow.head .ic { width: 14px; height: 14px; }
 .setrow .input { min-height: 42px; text-align: center; padding: 6px 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.setrow .prev { font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .setno { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-2); font-size: .82rem; font-weight: 600; }
 .setno.warm { background: color-mix(in srgb, var(--plate-yellow) 22%, transparent); color: var(--accent-ink); }
 .check { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); transition: background .15s, transform .12s; }
@@ -958,9 +956,6 @@ button.check-label.muted { color: var(--muted); }
 [data-style="rose"] .toast-error { background: var(--danger); }
 [data-style="rose"] .toast-pr { background: linear-gradient(135deg, #FBBF24, var(--accent)); color: #3A0A22; }
 
-/* flowers on the bar */
-[data-style="rose"] .flower-core { fill: #FDE68A; }
-[data-style="rose"] .flower .petals circle { fill: var(--bow, #F472B6); stroke: var(--bow-deep, #DB2777); stroke-width: .9; }
 [data-style="rose"] .plate-ghost { stroke: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 
 /* cheerful empty screens and a twinkle on the stars card */

@@ -1,5 +1,5 @@
 import { createStore, isCloud, uid, authErrorKey } from './store.js';
-import { EXERCISES, TEMPLATES, MUSCLES, MEASURE_KEYS, GROUPS, PARTS, CARDIO_EXTRAS, inGroup } from './data.js';
+import { EXERCISES, TEMPLATES, MUSCLES, GROUPS, PARTS, CARDIO_EXTRAS, inGroup } from './data.js';
 import { T } from './i18n.js';
 import { MEDIA, MEDIA_BASE } from './exmedia.js';
 import { STEPS_AR } from './exsteps.js';
@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.12.4';
+const VERSION = '1.12.5';
 
 /* =========================================================
    State
@@ -17,7 +17,7 @@ const S = {
   profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [],
   rewards: [], adminEx: [], perms: {},
   active: null,
-  ui: { histMonth: null, exFilter: 'all', exSub: '', exSearch: '', progMetric: 'weight', authTab: 'in' },
+  ui: { histMonth: null, exFilter: 'all', exSub: '', exSearch: '', authTab: 'in' },
 };
 let store;
 
@@ -185,7 +185,6 @@ function otherCells(type, b, exId) {
   if (type === 'time') return cell(t('met_secs'), `${b.reps} ${t('sec_short')}`);
   return cell(t('most_reps'), b.reps);
 }
-const otherGrid = (type, b, exId) => `<div class="pr-grid"><div><small>${t('sessions')}</small><b>${b.sessions}</b></div>${otherCells(type, b, exId)}</div>`;
 
 function bestsFor(exId, excludeId, before = Infinity) {
   const b = { weight: 0, reps: 0, total: 0, sessions: 0, last: null };
@@ -236,15 +235,6 @@ function goalStreak() {
     else break;
   }
   return streak;
-}
-
-function recentPRs(limit = 5) {
-  const list = [];
-  for (const w of sortedWorkouts()) {
-    for (const p of prsOf(w)) list.push({ ...p, date: w.start, wid: w.id });
-    if (list.length >= limit) break;
-  }
-  return list.slice(0, limit);
 }
 
 /* =========================================================
@@ -800,7 +790,7 @@ VIEWS.log = () => {
     const type = exType(e.exId);
     const cardio = type === 'cardio';
     const section = isSection(type);
-    const nopre = cardio || section;
+    const noRest = cardio || section;
     const cols = colsFor(e.exId);
     const prev = lastSetsFor(e.exId, A.editingId, before) || [];
     const sigState = { sig: null };
@@ -814,9 +804,8 @@ VIEWS.log = () => {
         : section ? `<button type="button" class="setno" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${j + 1}</button>`
         : `<span class="setno">${j + 1}</span>`;
       const cap = type === 'custom' && rowTitle(e.exId, j) ? `<div class="row-cap">${esc(rowTitle(e.exId, j))}</div>` : '';
-      return `${cap}<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}" data-i="${i}" data-j="${j}">
+      return `${cap}<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length} nopre" style="--n:${cols.length}" data-i="${i}" data-j="${j}">
         ${no}
-        ${nopre ? '' : `<span class="prev">${prev[j] ? prevText(type, prev[j], A.unit, e.exId) : '–'}</span>`}
         ${type === 'check' ? `<button type="button" class="check-label ${rowTitle(e.exId, j) ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}">${esc(rowTitle(e.exId, j) || t('tick_when_done'))}</button>` : ''}
         ${cols.map((c) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${c.f}" data-i="${i}" data-j="${j}" value="${esc(s[c.f] ?? '')}" placeholder="${esc(ph(c.f))}" aria-label="${esc(c.l)}"/>`).join('')}
         <button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button>
@@ -824,17 +813,14 @@ VIEWS.log = () => {
     }).join('');
     const ex = getEx(e.exId);
     const unitSfx = type === 'cardio' ? t('min_short') : type === 'time' ? t('sec_short') : type === 'carry' ? t('m_short') : '';
-    const restInfo = nopre ? '' : ` · ${icon('timer')}${e.rest || S.profile.rest || 90}${t('sec_short')}`;
-    const lastLine = nopre && prev.length && type !== 'check'
-      ? `<p class="prev-line muted small">${t('last_time')}: ${prev.map((x, k) => prevText(type, x, A.unit, e.exId, k)).join(' + ')}${cardio && cardioSpeed(prev[0], e.exId) ? ` · ${fmtNum(cardioSpeed(prev[0], e.exId))} ${t('kmh')}` : ''}</p>` : '';
+    const restInfo = noRest ? '' : ` · ${icon('timer')}${e.rest || S.profile.rest || 90}${t('sec_short')}`;
     return `<section class="exblock" data-i="${i}">
       <div class="exhead">
         <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${muscleName(ex)}${e.target ? ` · ${t('target')} ${esc(e.target)}${unitSfx}` : ''}${restInfo}</small></button>
         <button class="icon-btn sm" data-act="ex-demo" data-i="${i}" aria-label="${t('ex_details')}">${icon('image')}</button>
         <button class="icon-btn sm" data-act="ex-menu" data-i="${i}" aria-label="${t('more')}">${icon('more')}</button>
       </div>
-      ${lastLine}
-      ${!section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span></span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
+      ${!section ? `<div class="setrow head cols-${cols.length} nopre" style="--n:${cols.length}"><span></span>${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
       ${rows}
       <div class="exfoot">
         <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${section ? t('add_row') : cardio ? t('add_interval') : t('add_set')}</button>
@@ -1509,7 +1495,7 @@ VIEWS.settings = () => {
           <button class="btn btn-ghost btn-sm" data-act="export-csv">${icon('download')}${t('export_csv')}</button>
           <label class="btn btn-ghost btn-sm">${icon('upload')}${t('import_json')}<input type="file" accept="application/json,.json" data-import hidden/></label>
         </div>
-        <p class="muted small">${t('counts', { w: S.workouts.length, p: S.plans.length, b: S.bodyweight.length })}</p>
+        <p class="muted small">${t('counts', { w: S.workouts.length, p: S.plans.length })}</p>
         <button class="btn btn-ghost btn-sm danger" data-act="wipe">${icon('trash')}${t('delete_all')}</button>
       </section>
       <p class="muted small center">${t('app_name')} v${VERSION} · ${isCloud ? 'Firebase' : t('local_mode')}</p>
@@ -2029,37 +2015,6 @@ function addToActive(exId) {
   saveActive(true);
 }
 
-function measureSheet() {
-  openSheet(`<form class="sheet-body" data-msform>
-      <div class="sheet-title"><h3>${t('add_measure')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
-      <label class="field"><span>${t('date')}</span><input class="input" type="date" name="date" value="${dateKey()}" max="${dateKey()}" required/></label>
-      <div class="measure-form">${MEASURE_KEYS.map((k) => `<label class="field"><span>${t('ms_' + k)} ${k === 'bodyfat' ? '(%)' : `(${t('cm')})`}</span><input class="input" inputmode="decimal" name="${k}"/></label>`).join('')}</div>
-      <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
-    </form>`, {
-    onMount: (s, close) => s.querySelector('[data-msform]').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const values = {};
-      MEASURE_KEYS.forEach((k) => { const v = num(fd.get(k)); if (v != null && v > 0) values[k] = v; });
-      if (!Object.keys(values).length) { toast(t('enter_one'), 'error'); return; }
-      const m = { id: uid(), date: fd.get('date'), values };
-      S.measurements.push(m); persist('measurements', m);
-      close(); toast(t('saved'), 'success'); render();
-    }),
-  });
-}
-
-function addBodyweight(v, date) {
-  const kg = fromDisp(v);
-  if (!(kg > 20 && kg < 400)) { toast(t('enter_valid'), 'error'); return false; }
-  const existing = S.bodyweight.find((x) => x.date === date);
-  const entry = existing ? { ...existing, kg } : { id: uid(), date, kg };
-  if (existing) Object.assign(existing, entry); else S.bodyweight.push(entry);
-  persist('bodyweight', entry);
-  toast(t('saved'), 'success');
-  return true;
-}
-
 /* =========================================================
    Data import / export
    ========================================================= */
@@ -2124,10 +2079,6 @@ A['start-other'] = () => otherDaySheet();
 A['start-day'] = (el) => startWorkout({ planId: el.dataset.plan, dayId: el.dataset.day });
 A['repeat'] = (el) => startWorkout({ fromWorkout: el.dataset.id });
 A['go-train'] = () => go('log');
-A['bw-quick'] = async () => {
-  const v = await promptDialog({ title: t('log_weight') + ` (${uLabel()})`, ok: t('save'), cancel: t('cancel'), placeholder: '75', type: 'text' });
-  if (v != null && num(v) != null && addBodyweight(num(v), dateKey())) render();
-};
 
 A['auth-tab'] = (el) => { S.ui.authTab = el.dataset.tab; renderAuth(); };
 A['auth-lang'] = () => { prefs.lang = lang() === 'ar' ? 'en' : 'ar'; savePrefs(); applyAppearance(); renderAuth(); };
@@ -2278,7 +2229,6 @@ A['discard'] = async () => {
 };
 A['rest-adj'] = (el) => adjustRest(+el.dataset.d);
 A['rest-skip'] = () => stopRest();
-A['rest-start'] = (el) => startRest(+el.dataset.s);
 
 // History
 A['cal-nav'] = (el) => { const m = S.ui.histMonth; S.ui.histMonth = new Date(m.getFullYear(), m.getMonth() + +el.dataset.d, 1); render(); };
@@ -2309,14 +2259,6 @@ A['w-to-plan'] = (el) => {
     }),
   });
 };
-
-// Progress
-A['prog-metric'] = (el) => { S.ui.progMetric = el.dataset.m; render(); };
-
-// Body
-A['bw-del'] = (el) => { S.bodyweight = S.bodyweight.filter((x) => x.id !== el.dataset.id); unpersist('bodyweight', el.dataset.id); render(); };
-A['ms-add'] = () => measureSheet();
-A['ms-del'] = (el) => { S.measurements = S.measurements.filter((x) => x.id !== el.dataset.id); unpersist('measurements', el.dataset.id); render(); };
 
 // Exercises
 A['ex-filter'] = (el) => { S.ui.exFilter = el.dataset.m; S.ui.exSub = ''; render(); };
@@ -2467,9 +2409,6 @@ document.addEventListener('submit', async (e) => {
       await loadMember(f.dataset.uid);
       if (f.dataset.uid === S.user.uid) refreshRewards(true);
     } catch (err) { toast(adminDenied(err), 'error'); btn.disabled = false; }
-  } else if (kind === 'bw') {
-    const v = num(fd.get('v'));
-    if (v != null && addBodyweight(v, fd.get('d'))) render();
   }
 });
 
