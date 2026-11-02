@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.12.2';
+const VERSION = '1.12.3';
 
 /* =========================================================
    State
@@ -670,13 +670,9 @@ VIEWS.home = () => {
     <div class="stat">${icon('timer')}<b>${fmtDurShort(weekTime)}</b><span>${t('week_time')}</span></div>
   </div>`;
 
-  const last = sortedWorkouts()[0];
-  const lastHtml = last ? card(`<div class="card-head"><h3>${t('last_workout')}</h3><span class="muted small">${fmtDate(last.start)}</span></div>
-    ${workoutRow(last)}`) : '';
-
   return {
     title: t('nav_home'),
-    html: `<div class="page home">${hero}${starsCard()}${nameBanner()}${resume}${todayHtml}${stats}${lastHtml}</div>`,
+    html: `<div class="page home">${hero}${starsCard()}${nameBanner()}${resume}${todayHtml}${stats}</div>`,
   };
 };
 
@@ -1645,8 +1641,8 @@ function sectionSheet(existing, onSaved) {
         <div class="editor" data-editor></div>
         ${legacy ? '' : `<div class="chips-wrap quick-add" data-tpls ${saved.length ? '' : 'hidden'}></div>`}
         ${legacy ? '' : `<div class="save-method">
-          <label class="switch"><input type="checkbox" name="saveMethod"/><span class="switch-ui"></span><span>${t('save_method')}<small class="muted">${t('save_method_explain')}</small></span></label>
-          <label class="field" data-method-name hidden><span>${t('method_name')}</span><input class="input" name="methodName" maxlength="24"/></label>
+          <button type="button" class="btn btn-ghost btn-sm" data-save-tpl>${icon('plus')}${t('save_method')}</button>
+          <p class="muted small">${t('save_method_explain')}</p>
         </div>`}
       </div>
       ${locationSelect(existing || { muscle: 'section' }, true)}
@@ -1733,8 +1729,21 @@ function sectionSheet(existing, onSaved) {
           }
         });
       }
-      const sm = form.elements.saveMethod;
-      if (sm) sm.addEventListener('change', (ev) => { s.querySelector('[data-method-name]').hidden = !ev.target.checked; });
+      // save the current design as a template at any time, once the section has a title and a box
+      const tplBtn = s.querySelector('[data-save-tpl]');
+      if (tplBtn) tplBtn.addEventListener('click', () => {
+        const title = form.elements.title.value.trim();
+        if (!title) { form.elements.title.focus(); return err('section_need_title'); }
+        const tplRows = rows.map((r) => ({
+          title: r.title.trim(),
+          fields: r.boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim()).map((b, bi) => ({ k: b.k === 'w' ? 'w' : 'f' + (bi + 1), label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${bi + 1}`), ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}) })),
+        }));
+        if (!tplRows.some((r) => r.fields.length)) return err('section_need_box');
+        const id = 'm_' + uid().slice(0, 8);
+        S.profile.methods = [...userMethods(), { id, name: title, rows: tplRows.map((r) => ({ title: r.title, fields: r.fields.map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) })) }];
+        saveProfile(); saved = userMethods(); renderTpls();
+        err(''); toast(t('tpl_saved'), 'success');
+      });
       // starting from an exercise in the library is optional: it only fills in the title and the boxes
       s.querySelector('[data-from-lib]').addEventListener('click', () => {
         exercisePicker((id) => {
@@ -1768,11 +1777,6 @@ function sectionSheet(existing, onSaved) {
             }));
             return { title: r.title.trim(), fields };
           });
-          if (fd.get('saveMethod') === 'on' && obj.rows.some((r) => r.fields.length)) {
-            const nm = String(fd.get('methodName') || '').trim() || title;
-            S.profile.methods = [...userMethods(), { id: 'm_' + uid().slice(0, 8), name: nm, rows: obj.rows.map((r) => ({ title: r.title, fields: r.fields.map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) })) }];
-            saveProfile();
-          }
         }
         const i = S.exercises.findIndex((x) => x.id === obj.id);
         if (i >= 0) S.exercises[i] = obj; else S.exercises.push(obj);

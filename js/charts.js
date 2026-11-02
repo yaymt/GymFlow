@@ -106,7 +106,6 @@ export function sparkline(values, color = 'var(--accent)') {
  * done: sessions completed, goal: weekly target
  */
 export function barbell(done, goal) {
-  if (typeof document !== 'undefined' && document.documentElement.dataset.style === 'rose') return barbellRose(done, goal);
   const W = 360, H = 120, cy = 60;
   const slots = Math.max(goal, done);
   const perSide = Math.ceil(slots / 2);
