@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.11.1';
+const VERSION = '1.11.2';
 
 /* =========================================================
    State
@@ -1575,9 +1575,10 @@ function sectionRowHtml(e, i, s, j, prev, A, st) {
   const fl = rowDef(e.exId, j).fields, title = rowTitle(e.exId, j);
   const pp = prev.find((x, k) => (x.row ?? k) === j);
   const ph = (f) => { const v = pp && pp[f]; if (v == null) return ''; return f === 'w' ? fmtNum(A.unit === 'lb' ? v * LB : v) : fmtNum(v); };
-  const sig = fl.map((b) => b.k + boxLabel(b)).join('|');
+  // a heading is written once: rows that follow with the same box names (even if made in different ways) do not repeat it
+  const sig = fl.map((b) => boxLabel(b)).join('|');
   const head = fl.length && sig !== st.sig
-    ? `<div class="setrow head sec cols-${fl.length}" style="--n:${fl.length}"><span>#</span><span>${t('row_head')}</span>${fl.map((b) => `<span>${esc(boxLabel(b))}</span>`).join('')}<span>${icon('check')}</span></div>` : '';
+    ? `<div class="setrow head sec cols-${fl.length}" style="--n:${fl.length}"><span></span><span></span>${fl.map((b) => `<span>${esc(boxLabel(b))}</span>`).join('')}<span>${icon('check')}</span></div>` : '';
   st.sig = fl.length ? sig : null;
   const no = `<span class="setno">${j + 1}</span>`;
   const ttl = `<button type="button" class="sec-title ${title ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${esc(title || (fl.length ? '–' : t('tick_when_done')))}</button>`;
