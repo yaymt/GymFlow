@@ -7,12 +7,12 @@
 //   'cardio'     minutes + distance + one optional extra (incline / level), no sets, no rest timer
 // For cardio: dist = 'km' | 'm' | 'floors' | null, extra = key of CARDIO_EXTRAS | null
 
-export const MUSCLES = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core', 'cardio', 'full'];
+export const MUSCLES = ['warmup_upper', 'warmup_lower', 'chest', 'back', 'shoulders', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core', 'cardio', 'full'];
 
 // Sections shown in the exercise list. Arms and legs are split into parts; the parts still count separately in progress stats.
 export const LEG_MUSCLES = ['quads', 'hamstrings', 'glutes', 'calves'];
-export const PARTS = { arms: ['biceps', 'triceps'], legs: LEG_MUSCLES };
-export const GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'cardio', 'full'];
+export const PARTS = { warmup: ['warmup_upper', 'warmup_lower'], arms: ['biceps', 'triceps'], legs: LEG_MUSCLES };
+export const GROUPS = ['warmup', 'chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'cardio', 'full'];
 export const inGroup = (muscle, group) => (PARTS[group] ? PARTS[group].includes(muscle) : muscle === group);
 
 export const CARDIO_EXTRAS = {
@@ -24,6 +24,37 @@ export const CARDIO_EXTRAS = {
 const ex = (id, en, ar, muscle, equip, type = 'weight', more = {}) => ({ id, en, ar, muscle, equip, type, builtin: true, ...more });
 
 export const EXERCISES = [
+  // Warm-up: upper body
+  ex('wu_arm_circles', 'Arm Circles', 'دوائر الذراعين', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_shoulder_circles', 'Shoulder Circles', 'دوائر الكتفين', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_elbow_circles', 'Elbow Circles', 'دوائر المرفقين', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_wrist_circles', 'Wrist Circles', 'دوائر المعصمين', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_torso_rot', 'Torso Rotation', 'لف الجذع', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_chest_stretch', 'Dynamic Chest Stretch', 'تمدد الصدر الديناميكي', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_back_stretch', 'Dynamic Back Stretch', 'تمدد الظهر الديناميكي', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_band_pull_apart', 'Band Pull-Apart', 'فتح المطاط للخلف', 'warmup_upper', 'band', 'bodyweight'),
+  ex('wu_cat_stretch', 'Cat Stretch', 'تمدد القطة', 'warmup_upper', 'bodyweight', 'time'),
+  ex('wu_inchworm', 'Inchworm', 'الدودة (إنش وورم)', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_scap_pullup', 'Scapular Pull-Up', 'عقلة الكتف (سكابيولر)', 'warmup_upper', 'bodyweight', 'bodyweight'),
+  ex('wu_jumping_jacks', 'Jumping Jacks', 'قفز النجمة (جامبينج جاك)', 'warmup_upper', 'bodyweight', 'time'),
+  // Warm-up: lower body
+  ex('wu_hip_circles', 'Hip Circles', 'دوائر الحوض', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_knee_circles', 'Knee Circles', 'دوائر الركبتين', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_ankle_circles', 'Ankle Circles', 'دوائر الكاحلين', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_leg_swing_front', 'Front Leg Swing', 'أرجحة الساق للأمام', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_leg_swing_side', 'Side Leg Swing', 'أرجحة الساق للجانب', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_leg_swing_back', 'Rear Leg Swing', 'أرجحة الساق للخلف', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_toe_touch', 'Standing Toe Touch', 'لمس أصابع القدم واقفًا', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_squat', 'Bodyweight Squat (warm-up)', 'سكوات بوزن الجسم (إحماء)', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_lunge', 'Walking Lunge (warm-up)', 'اندفاع مشي (إحماء)', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_glute_bridge', 'Glute Bridge (warm-up)', 'جسر الأرداف (إحماء)', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_monster_walk', 'Band Monster Walk', 'مشي الوحش بالمطاط', 'warmup_lower', 'band', 'bodyweight'),
+  ex('wu_butt_kick', 'Butt Kicks', 'ركل الأرداف', 'warmup_lower', 'bodyweight', 'time'),
+  ex('wu_hug_knees', 'Knee Hug', 'ضم الركبة للصدر', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_hip_flexor', 'Kneeling Hip Flexor Stretch', 'تمدد مثنية الورك', 'warmup_lower', 'bodyweight', 'time'),
+  ex('wu_worlds', 'World\'s Greatest Stretch', 'أعظم تمدد في العالم', 'warmup_lower', 'bodyweight', 'bodyweight'),
+  ex('wu_walk', 'Light Walk (treadmill)', 'مشي خفيف على السير', 'warmup_lower', 'machine', 'cardio', { dist: 'km', extra: 'incline' }),
+  ex('wu_mountain', 'Mountain Climbers', 'متسلق الجبل', 'warmup_lower', 'bodyweight', 'time'),
   // Chest
   ex('bench', 'Barbell Bench Press', 'بنش برس بالبار', 'chest', 'barbell'),
   ex('incline_bench', 'Incline Barbell Bench Press', 'بنش علوي بالبار', 'chest', 'barbell'),

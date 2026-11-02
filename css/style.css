@@ -867,3 +867,19 @@ button.wrow { width: 100%; text-align: start; font: inherit; color: inherit; }
 .add-pair { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
 .add-pair .btn-dashed { min-height: 52px; padding-inline: 6px; font-size: .9rem; }
 .setrow.nopre .input { padding-inline: 2px; min-width: 0; }
+
+/* ---------- Sections you make, warm-up ---------- */
+:root { --m-warmup_upper: #F59E0B; --m-warmup_lower: #14B8A6; --m-section: #94A3B8; }
+.chip-add { border-style: dashed; color: var(--accent-ink); gap: 4px; }
+.chip-add .ic, .chip-edit .ic { width: 15px; height: 15px; }
+.chip-edit { color: var(--muted); gap: 4px; margin-inline-start: auto; }
+.cat-parts { grid-template-columns: 1fr 1fr; }
+
+/* ---------- Section editor ---------- */
+.editor { display: grid; gap: 10px; }
+.box-list { display: grid; gap: 8px; }
+.box-row { display: grid; grid-template-columns: 1fr 84px 34px; gap: 6px; align-items: center; }
+.box-row .input { min-height: 42px; }
+.quick-add .chip { height: 32px; font-size: .8rem; }
+.save-method { display: grid; gap: 10px; }
+.save-method[hidden], .save-method [hidden] { display: none; }

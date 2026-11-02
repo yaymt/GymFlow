@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 
 /* =========================================================
    State
@@ -86,18 +86,38 @@ const distLabel = (d) => (d === 'm' ? t('m_short') : d === 'floors' ? t('floors'
 const extraName = (k) => (CARDIO_EXTRAS[k] ? CARDIO_EXTRAS[k][lang()] : k);
 const extraLabel = (k) => extraName(k) + (CARDIO_EXTRAS[k]?.unit ? ` ${CARDIO_EXTRAS[k].unit}` : '');
 const extraText = (k, v) => `${extraName(k)} ${fmtNum(v)}${CARDIO_EXTRAS[k]?.unit || ''}`;
+// Sections you make yourself live in your profile; each exercise points to its section (cat) and part
+const userSections = () => S.profile.sections || [];
+const secById = (id) => userSections().find((x) => x.id === id);
+// the short way an exercise is counted, left out when it only repeats the equipment name (bodyweight)
+const typeTag = (e) => { const tt = t('ty_' + (e.type || 'weight') + '_short'); return tt === t('eq_' + e.equip) ? '' : ` · ${tt}`; };
+const muscleName = (e) => {
+  const sc = e.cat && secById(e.cat);
+  if (sc) { const pt = (sc.parts || []).find((p) => p.id === e.part); return pt ? `${sc.name} · ${pt.name}` : sc.name; }
+  return t('m_' + e.muscle);
+};
+const matchGroup = (e, g, sub) => {
+  if (g === 'all') return true;
+  if (g === 'custom') return !e.builtin;
+  if (g.startsWith('cat:')) return e.cat === g.slice(4) && (!sub || e.part === sub);
+  return inGroup(e.muscle, g) && (!sub || e.muscle === sub);
+};
+const partsOf = (g) => (g.startsWith('cat:') ? ((secById(g.slice(4)) || {}).parts || []).map((p) => [p.id, p.name]) : (PARTS[g] || []).map((m) => [m, t('m_' + m)]));
+
 // Custom sections: a box you design yourself. "check" = just a tick and a note; "custom" = the boxes you pick.
 const BOXES = [['min', 'box_min'], ['sec', 'box_sec'], ['km', 'box_km'], ['m', 'box_m'], ['reps', 'box_reps'], ['kcal', 'box_kcal']];
 const isSection = (type) => type === 'check' || type === 'custom';
 const sectionFields = (exId) => getEx(exId).fields || [];
-const boxLabel = (b) => b.label || t((BOXES.find(([k]) => k === b.k) || [])[1] || 'box_min');
+const boxName = (b) => b.label || t((BOXES.find(([k]) => k === b.k) || [])[1] || 'box_min');
+const boxLabel = (b) => boxName(b) + (b.unit ? ` (${b.unit})` : '');
+const boxText = (b, v) => `${fmtNum(v)} ${b.unit || boxName(b)}`;
 const noSets = (exId) => { const ty = exType(exId); return ty === 'cardio' || isSection(ty); };
 const blankSet = (exId) => {
   const st = { w: '', r: '', x: '', done: false };
   if (exType(exId) === 'custom') sectionFields(exId).forEach((b) => (st[b.k] = ''));
   return st;
 };
-const colsFor = (exId) => {
+const colsBase = (exId) => {
   const type = exType(exId);
   if (type === 'check') return [];
   if (type === 'custom') return sectionFields(exId).map((b) => ({ f: b.k, l: boxLabel(b) }));
@@ -107,6 +127,11 @@ const colsFor = (exId) => {
   if (type === 'carry') return [{ f: 'w', l: uLabel() }, { f: 'r', l: t('m_short') }];
   const c = cardioDef(exId);
   return [{ f: 'r', l: t('min') }, ...(c.dist ? [{ f: 'w', l: distLabel(c.dist) }] : []), ...(c.extra ? [{ f: 'x', l: extraLabel(c.extra) }] : [])];
+};
+// column headings can be renamed per exercise (labels), unless the plain names are asked for
+const colsFor = (exId, plain) => {
+  const cols = colsBase(exId), o = !plain && getEx(exId).labels;
+  return o ? cols.map((c) => ({ ...c, l: o[c.f] || c.l })) : cols;
 };
 // What a plan item asks for, e.g. "4×8", "30 min", "3×45s"
 const targetText = (it) => {
@@ -670,7 +695,7 @@ VIEWS.plan = (r) => {
         ${d.items.length ? `<div class="item-head"><span>${t('exercise')}</span><span>${t('sets')}</span><span>${t('reps_time')}</span><span>${t('rest_s')}</span><span></span></div>` : ''}
         ${d.items.map((it, ii) => `
         <div class="item-row">
-          <button class="item-name" data-act="item-menu" data-d="${di}" data-i="${ii}">${esc(exName(it.exId))}<small>${t('m_' + getEx(it.exId).muscle)}${exType(it.exId) === 'cardio' ? ` · ${t('ty_cardio_short')}` : ''}</small></button>
+          <button class="item-name" data-act="item-menu" data-d="${di}" data-i="${ii}">${esc(exName(it.exId))}<small>${muscleName(getEx(it.exId))}${exType(it.exId) === 'cardio' ? ` · ${t('ty_cardio_short')}` : ''}</small></button>
           ${noSets(it.exId)
             ? `<span class="item-na">–</span>
           <input class="input input-num" value="${esc(it.reps)}" placeholder="${isSection(exType(it.exId)) ? t('target') : t('min')}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${isSection(exType(it.exId)) ? t('target') : t('min')}"/>
@@ -717,7 +742,7 @@ function prevText(type, s, aUnit, exId) {
   if (!s) return '–';
   if (type === 'check') return '✓';
   if (type === 'custom') {
-    const parts = sectionFields(exId).filter((b) => s[b.k] != null && s[b.k] !== '').map((b) => `${fmtNum(s[b.k])} ${boxLabel(b)}`);
+    const parts = sectionFields(exId).filter((b) => s[b.k] != null && s[b.k] !== '').map((b) => boxText(b, s[b.k]));
     return parts.join(' · ') || '✓';
   }
   const w = isLoad(type) ? (aUnit === 'lb' ? s.w * LB : s.w) : s.w;
@@ -767,7 +792,7 @@ VIEWS.log = () => {
       ? `<p class="prev-line muted small">${t('last_time')}: ${prev.map((x) => prevText(type, x, A.unit, e.exId)).join(' + ')}${cardio && cardioSpeed(prev[0], e.exId) ? ` · ${fmtNum(cardioSpeed(prev[0], e.exId))} ${t('kmh')}` : ''}</p>` : '';
     return `<section class="exblock" data-i="${i}">
       <div class="exhead">
-        <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${t('m_' + ex.muscle)}${e.target ? ` · ${t('target')} ${esc(e.target)}${unitSfx}` : ''}${restInfo}</small></button>
+        <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${muscleName(ex)}${e.target ? ` · ${t('target')} ${esc(e.target)}${unitSfx}` : ''}${restInfo}</small></button>
         <button class="icon-btn sm" data-act="ex-demo" data-i="${i}" aria-label="${t('ex_details')}">${icon('image')}</button>
         <button class="icon-btn sm" data-act="ex-menu" data-i="${i}" aria-label="${t('more')}">${icon('more')}</button>
       </div>
@@ -775,8 +800,8 @@ VIEWS.log = () => {
       ${cols.length || !section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span>#</span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
       ${rows}
       <div class="exfoot">
-        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${section ? t('add_row') : cardio ? t('add_interval') : t('add_set')}</button>
-        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${section ? t('remove_row') : cardio ? t('remove_interval') : t('remove_set')}</button>` : ''}
+        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${ex.rowName || (section ? t('add_row') : cardio ? t('add_interval') : t('add_set'))}</button>
+        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${ex.rowName ? t('remove') + ' ' + ex.rowName : (section ? t('remove_row') : cardio ? t('remove_interval') : t('remove_set'))}</button>` : ''}
         <input class="input note-in" data-note="${i}" value="${esc(e.note || '')}" placeholder="${t('note_ph')}"/>
       </div>
     </section>`;
@@ -1188,42 +1213,52 @@ VIEWS.body = () => {
 };
 
 /* ---------- EXERCISES ---------- */
-// Sections that have parts (arms, legs) list their exercises under a heading per part, unless one part is picked
+// Sections with parts (warm-up, arms, legs, and the ones you make) list their exercises under a heading per part, unless one part is picked
 function groupedRows(list, filter, sub, row) {
-  if (!PARTS[filter] || sub) return list.map(row).join('');
-  return PARTS[filter].map((mu) => {
-    const part = list.filter((e) => e.muscle === mu);
-    return part.length ? `<p class="list-label">${t('m_' + mu)}</p>${part.map(row).join('')}` : '';
+  const parts = partsOf(filter);
+  if (!parts.length || sub) return list.map(row).join('');
+  const key = (e) => (filter.startsWith('cat:') ? e.part : e.muscle);
+  const placed = new Set();
+  const html = parts.map(([id, name]) => {
+    const part = list.filter((e) => key(e) === id);
+    part.forEach((e) => placed.add(e));
+    return part.length ? `<p class="list-label">${esc(name)}</p>${part.map(row).join('')}` : '';
   }).join('');
+  return list.filter((e) => !placed.has(e)).map(row).join('') + html;
 }
 
-// Section buttons: one wrapped block (no sideways scrolling), plus a second row of parts when a section has them
+// Section buttons: one wrapped block (no sideways scrolling), your own sections, a "new section" button,
+// plus a second row of parts when the picked section has them
 function sectionChips(filter, sub, attrs, withCustom) {
   const all = allExercises();
-  const count = (g) => (g === 'all' ? all.length : g === 'custom' ? all.filter((e) => !e.builtin).length : all.filter((e) => inGroup(e.muscle, g)).length);
-  const chip = (g, label) => `<button class="chip ${filter === g ? 'chip-solid' : ''}" ${attrs.group}="${g}">${label}<i>${count(g)}</i></button>`;
-  const top = ['all', ...GROUPS, ...(withCustom ? ['custom'] : [])].map((g) => chip(g, g === 'all' ? t('all') : g === 'custom' ? t('custom') : t('m_' + g))).join('');
-  const parts = PARTS[filter]
-    ? `<div class="chips-wrap chips-sub">${[['', t('all')], ...PARTS[filter].map((m) => [m, t('m_' + m)])].map(([m, l]) => `<button class="chip ${sub === m ? 'chip-solid' : ''}" ${attrs.part}="${m}">${l}</button>`).join('')}</div>` : '';
+  const count = (g) => all.filter((e) => matchGroup(e, g, '')).length;
+  const nameOf = (g) => (g === 'all' ? t('all') : g === 'custom' ? t('custom') : g.startsWith('cat:') ? esc((secById(g.slice(4)) || {}).name || '') : t('m_' + g));
+  const chip = (g) => `<button class="chip ${filter === g ? 'chip-solid' : ''}" ${attrs.group}="${g}">${nameOf(g)}<i>${count(g)}</i></button>`;
+  const groups = ['all', ...GROUPS, ...userSections().map((x) => 'cat:' + x.id), ...(withCustom ? ['custom'] : [])];
+  const top = groups.map(chip).join('') + `<button type="button" class="chip chip-add" ${attrs.add}>${icon('plus')}${t('new_section_chip')}</button>`;
+  const ps = partsOf(filter);
+  const own = filter.startsWith('cat:') ? secById(filter.slice(4)) : null;
+  const parts = ps.length || own
+    ? `<div class="chips-wrap chips-sub">${ps.length ? [['', t('all')], ...ps].map(([m, l]) => `<button class="chip ${sub === m ? 'chip-solid' : ''}" ${attrs.part}="${m}">${esc(l)}</button>`).join('') : ''}${own ? `<button type="button" class="chip chip-edit" ${attrs.edit}="${own.id}">${icon('edit')}${t('cat_edit')}</button>` : ''}</div>` : '';
   return `<div class="chips-wrap chips-main">${top}</div>${parts}`;
 }
 
 VIEWS.exercises = () => {
-  const f = S.ui.exFilter, sub = PARTS[f] ? S.ui.exSub : '', q = S.ui.exSearch.trim().toLowerCase();
+  const f = S.ui.exFilter, sub = partsOf(f).length ? S.ui.exSub : '', q = S.ui.exSearch.trim().toLowerCase();
   const counts = {};
   S.workouts.forEach((w) => w.exercises.forEach((e) => (counts[e.exId] = (counts[e.exId] || 0) + 1)));
-  const list = allExercises().filter((e) => (f === 'all' || (f === 'custom' ? !e.builtin : inGroup(e.muscle, f) && (!sub || e.muscle === sub))) && (!q || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(q)))
+  const list = allExercises().filter((e) => matchGroup(e, f, sub) && (!q || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0) || exName(a).localeCompare(exName(b)));
   return {
     title: t('nav_exercises'),
     actions: `<button class="icon-btn" data-act="ex-new" aria-label="${t('new_exercise')}">${icon('plus')}</button>`,
     html: `<div class="page">
       <div class="search">${icon('search')}<input class="input" data-ex-search value="${esc(S.ui.exSearch)}" placeholder="${t('search_ex')}" type="search"/></div>
-      ${sectionChips(f, sub, { group: 'data-act="ex-filter" data-m', part: 'data-act="ex-sub" data-m' }, true)}
+      ${sectionChips(f, sub, { group: 'data-act="ex-filter" data-m', part: 'data-act="ex-sub" data-m', add: 'data-act="cat-add"', edit: 'data-act="cat-edit" data-id' }, true)}
       <div class="ex-list">${groupedRows(list, f, sub, (e) => `
         <button class="ex-item" data-act="ex-open" data-id="${esc(e.id)}">
           <span class="ex-dot" style="background:var(--m-${e.muscle})"></span>
-          <span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}${!e.builtin ? ` · ${t('custom')}` : ''}</small></span>
+          <span><b>${esc(exName(e))}</b><small>${muscleName(e)} · ${t('eq_' + e.equip)}${typeTag(e)}${!e.builtin ? ` · ${t('custom')}` : ''}</small></span>
           ${counts[e.id] ? `<span class="count">${counts[e.id]}</span>` : ''}
         </button>`) || `<p class="muted center">${t('no_results')}</p>`}</div>
       <button class="btn btn-dashed" data-act="ex-new">${icon('plus')}${t('new_exercise')}</button>
@@ -1654,16 +1689,17 @@ VIEWS.settings = () => {
 /* =========================================================
    Sheets: picker, more menu, templates, exercise form
    ========================================================= */
+const PICKER_ATTRS = { group: 'data-mf', part: 'data-ms', add: 'data-cat-add', edit: 'data-cat-edit' };
 function exercisePicker(onPick, title = t('add_exercise')) {
   let filter = 'all', sub = '', q = '';
   const recent = [];
   sortedWorkouts().slice(0, 15).forEach((w) => w.exercises.forEach((e) => { if (!recent.includes(e.exId)) recent.push(e.exId); }));
   const listHtml = () => {
     const ql = q.trim().toLowerCase();
-    let list = allExercises().filter((e) => (filter === 'all' || (inGroup(e.muscle, filter) && (!sub || e.muscle === sub))) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
+    let list = allExercises().filter((e) => matchGroup(e, filter, sub) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
     const rec = !ql && filter === 'all' ? recent.slice(0, 8).map(getEx) : [];
     // the picture button lets you see what the exercise is before choosing it
-    const row = (e) => `<div class="ex-row"><button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight') + '_short')}</small></span>${icon('plus')}</button><button class="icon-btn sm ex-peek" data-preview="${esc(e.id)}" aria-label="${t('ex_details')}">${icon('image')}</button></div>`;
+    const row = (e) => `<div class="ex-row"><button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${muscleName(e)} · ${t('eq_' + e.equip)}${typeTag(e)}</small></span>${icon('plus')}</button><button class="icon-btn sm ex-peek" data-preview="${esc(e.id)}" aria-label="${t('ex_details')}">${icon('image')}</button></div>`;
     list = list.sort((a, b) => exName(a).localeCompare(exName(b)));
     return `${rec.length ? `<p class="list-label">${t('recent')}</p>${rec.map(row).join('')}<p class="list-label">${t('all_exercises')}</p>` : ''}${groupedRows(list, filter, sub, row) || `<p class="muted center">${t('no_results')}</p>`}
       <button class="btn btn-dashed" data-new-ex>${icon('plus')}${t('new_exercise')}${ql ? `: “${esc(q)}”` : ''}</button>`;
@@ -1671,7 +1707,7 @@ function exercisePicker(onPick, title = t('add_exercise')) {
   openSheet(`<div class="sheet-body picker">
       <div class="sheet-title"><h3>${esc(title)}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <div class="search">${icon('search')}<input class="input" type="search" data-q placeholder="${t('search_ex')}" autofocus/></div>
-      <div data-chips>${sectionChips(filter, sub, { group: 'data-mf', part: 'data-ms' }, false)}</div>
+      <div data-chips>${sectionChips(filter, sub, PICKER_ATTRS, true)}</div>
       <div class="ex-list" data-list>${listHtml()}</div>
     </div>`, {
     wide: true,
@@ -1682,9 +1718,13 @@ function exercisePicker(onPick, title = t('add_exercise')) {
         const mf = e.target.closest('[data-mf]'), ms = e.target.closest('[data-ms]');
         if (mf || ms) {
           if (mf) { filter = mf.dataset.mf; sub = ''; } else sub = ms.dataset.ms;
-          s.querySelector('[data-chips]').innerHTML = sectionChips(filter, sub, { group: 'data-mf', part: 'data-ms' }, false);
+          s.querySelector('[data-chips]').innerHTML = sectionChips(filter, sub, PICKER_ATTRS, true);
           L.innerHTML = listHtml();
         }
+        const refresh = (id) => { if (id !== undefined) { filter = id ? 'cat:' + id : 'all'; sub = ''; } s.querySelector('[data-chips]').innerHTML = sectionChips(filter, sub, PICKER_ATTRS, true); L.innerHTML = listHtml(); };
+        if (e.target.closest('[data-cat-add]')) { categorySheet(null, refresh); return; }
+        const ce = e.target.closest('[data-cat-edit]');
+        if (ce) { categorySheet(secById(ce.dataset.catEdit), refresh); return; }
         const pv = e.target.closest('[data-preview]');
         if (pv) { previewSheet(pv.dataset.preview, (id) => { close(); onPick(id); }); return; }
         const p = e.target.closest('[data-pick]');
@@ -1702,7 +1742,7 @@ function previewSheet(id, onChoose) {
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(e))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       ${demoHtml(id)}
-      <p class="muted">${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
+      <p class="muted">${muscleName(e)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
       <div class="row-actions"><button class="btn btn-ghost" data-sheet-close>${t('close')}</button><button class="btn btn-primary" data-choose>${icon('plus')}${t('choose_ex')}</button></div>
     </div>`, {
     onClose: () => stop(),
@@ -1710,79 +1750,154 @@ function previewSheet(id, onChoose) {
   });
 }
 
-/* ---------- CUSTOM SECTIONS: a box you design yourself (title, how it is counted, notes) ---------- */
-const SECTION_METHODS = ['check', 'minutes', 'minkm', 'weightreps', 'reps', 'seconds', 'boxes'];
+/* ---------- CUSTOM SECTIONS: a box you design yourself ----------
+   Everything is editable: the title, where it lives, how it is counted, the name and unit of every box,
+   and what a row is called. Methods you make can be saved and used again. */
+const userMethods = () => S.profile.methods || [];
+const catalogName = (k) => { const r = BOXES.find(([x]) => x === k); return r ? t(r[1]) : ''; };
+// boxes of a section as the editor shows them; old sections only stored a key, so fall back to the built-in name
+const boxEntries = (fields) => (fields || []).map((b) => ({ k: b.k, label: b.label || catalogName(b.k), unit: b.unit || '' }));
+const presetFields = (m) => ({
+  minutes: [{ label: t('box_min') }],
+  minkm: [{ label: t('box_min') }, { label: t('box_dist'), unit: t('km') }],
+  seconds: [{ label: t('box_sec') }],
+  reps: [{ label: t('box_reps') }],
+}[m] || []).map((b) => ({ k: '', label: b.label, unit: b.unit || '' }));
 const methodOf = (ex) => {
   if (!ex) return 'check';
-  if (ex.type === 'custom') return 'boxes';
+  if (ex.type === 'check') return 'check';
+  if (ex.type === 'custom') return 'mine';
+  if (ex.type === 'weight') return 'weightreps';
+  return 'keep'; // cardio, reps, time... keep its logic, only the headings can change
+};
+// what to copy when starting from an exercise in the library
+const presetOf = (ex) => {
+  if (ex.type === 'check') return 'check';
+  if (ex.type === 'custom') return 'mine';
   if (ex.type === 'cardio') return ex.dist ? 'minkm' : 'minutes';
-  if (ex.type === 'weight' || ex.type === 'carry') return 'weightreps';
   if (ex.type === 'bodyweight') return 'reps';
   if (ex.type === 'time') return 'seconds';
-  return 'check';
+  return 'weightreps';
 };
 
 function sectionSheet(existing, onSaved) {
-  const method0 = methodOf(existing);
-  const fields0 = existing && existing.type === 'custom' ? existing.fields || [] : [{ k: 'min' }];
-  const has = (k) => fields0.some((b) => b.k === k);
-  const own = (k) => (fields0.find((b) => b.k === k) || {}).label || '';
+  let method = methodOf(existing);
+  let boxes = existing && existing.type === 'custom' ? boxEntries(existing.fields) : presetFields(method);
+  const labels = { ...((existing && existing.labels) || {}) };
+  const saved = userMethods();
+  const methodList = ['check', 'minutes', 'minkm', 'seconds', 'reps', 'weightreps', 'mine', ...saved.map((m) => 'm:' + m.id)];
+  if (method === 'keep') methodList.unshift('keep');
+  const methodName = (m) => (m.startsWith('m:') ? (saved.find((x) => 'm:' + x.id === m) || {}).name || '' : t('sm_' + m));
   openSheet(`<form class="sheet-body" data-sectionform>
       <div class="sheet-title"><h3>${existing ? t('section_edit') : t('add_section')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <label class="field"><span>${t('section_title')}</span><input class="input" name="title" value="${esc(existing ? existing.name : '')}" maxlength="40" placeholder="${t('section_title_ph')}" required autofocus/></label>
       <button type="button" class="btn btn-ghost btn-sm" data-from-lib>${icon('library')}${t('from_library')}</button>
-      <label class="field"><span>${t('section_method')}</span><select class="input" name="method">${SECTION_METHODS.map((m) => `<option value="${m}" ${m === method0 ? 'selected' : ''}>${t('sm_' + m)}</option>`).join('')}</select></label>
+      ${locationSelect(existing || { muscle: 'section' }, true)}
+      <label class="field"><span>${t('section_method')}</span><select class="input" name="method">
+        ${methodList.slice(0, methodList.indexOf('mine') + 1).map((m) => `<option value="${m}" ${m === method ? 'selected' : ''}>${esc(methodName(m))}</option>`).join('')}
+        ${saved.length ? `<optgroup label="${t('my_methods')}">${saved.map((x) => `<option value="m:${x.id}">${esc(x.name)}</option>`).join('')}</optgroup>` : ''}
+      </select></label>
       <p class="muted small" data-hint></p>
-      <div class="box-opts" ${method0 === 'boxes' ? '' : 'hidden'}>
-        <p class="muted small">${t('boxes_hint')}</p>
-        <div class="chips-wrap">${BOXES.map(([k, lk]) => `<label class="chip-check"><input type="checkbox" name="box_${k}" ${has(k) ? 'checked' : ''}/><span>${t(lk)}</span></label>`).join('')}</div>
-        <div class="inline-form">
-          <label class="field"><span>${t('own_box')} 1</span><input class="input" name="label_a" value="${esc(own('a'))}" maxlength="16" placeholder="${t('own_box_ph')}"/></label>
-          <label class="field"><span>${t('own_box')} 2</span><input class="input" name="label_b" value="${esc(own('b'))}" maxlength="16" placeholder="${t('own_box_ph')}"/></label>
-        </div>
+      <div class="editor" data-editor></div>
+      <label class="field"><span>${t('row_name')}</span><input class="input" name="rowName" value="${esc(existing ? existing.rowName || '' : '')}" maxlength="14" placeholder="${t('row_name_ph')}"/></label>
+      <div class="save-method" data-save-method hidden>
+        <label class="switch"><input type="checkbox" name="saveMethod"/><span class="switch-ui"></span><span>${t('save_method')}</span></label>
+        <label class="field" data-method-name hidden><span>${t('method_name')}</span><input class="input" name="methodName" maxlength="24"/></label>
       </div>
       <p class="form-err" data-err role="alert"></p>
       <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
     </form>`, {
     onMount: (s, close) => {
       const form = s.querySelector('[data-sectionform]');
-      const method = form.elements.method, hint = s.querySelector('[data-hint]'), opts = s.querySelector('.box-opts');
-      const sync = () => {
-        opts.hidden = method.value !== 'boxes';
-        hint.textContent = t('sh_' + method.value);
+      const editor = s.querySelector('[data-editor]'), hint = s.querySelector('[data-hint]');
+      const isBoxes = () => !['check', 'weightreps', 'keep'].includes(method);
+      const err = (k) => { s.querySelector('[data-err]').textContent = k ? t(k) : ''; };
+      const draw = () => {
+        err('');
+        hint.textContent = method.startsWith('m:') ? '' : t('sh_' + method);
+        s.querySelector('[data-save-method]').hidden = !isBoxes();
+        if (method === 'check') { editor.innerHTML = ''; return; }
+        if (!isBoxes()) {
+          // a fixed way of counting (weight x reps, or what the exercise already has): only the headings can change
+          const cols = method === 'keep' ? colsFor(existing.id, true) : [{ f: 'w', l: uLabel() }, { f: 'r', l: t('reps') }];
+          editor.innerHTML = `<p class="muted small">${t('rename_heads')}</p>` + cols.map((c) => `<label class="field"><span>${esc(c.l)}</span><input class="input" data-lab="${c.f}" value="${esc(labels[c.f] || '')}" placeholder="${esc(c.l)}" maxlength="16"/></label>`).join('');
+          return;
+        }
+        editor.innerHTML = `<p class="muted small">${t('boxes_hint')}</p>
+          <div class="box-list">${boxes.map((b, i) => `<div class="box-row">
+            <input class="input" data-bl="${i}" value="${esc(b.label)}" placeholder="${t('box_name_ph')}" maxlength="16" aria-label="${t('box_name_ph')}"/>
+            <input class="input box-unit" data-bu="${i}" value="${esc(b.unit)}" placeholder="${t('box_unit_ph')}" maxlength="8" aria-label="${t('box_unit_ph')}"/>
+            <button type="button" class="icon-btn sm danger" data-bdel="${i}" aria-label="${t('delete')}">${icon('x')}</button></div>`).join('')}</div>
+          <div class="chips-wrap quick-add"><button type="button" class="chip chip-add" data-badd>${icon('plus')}${t('add_box')}</button>
+            ${BOXES.map(([k, lk]) => `<button type="button" class="chip" data-bquick="${k}">${t(lk)}</button>`).join('')}</div>`;
       };
-      method.addEventListener('change', sync);
-      sync();
-      // start from an exercise in the library: takes its name and the way it is counted
+      const addBox = (label = '', unit = '') => {
+        if (boxes.length >= 6) return err('section_too_many');
+        boxes.push({ k: '', label, unit }); draw();
+        editor.querySelector(`[data-bl="${boxes.length - 1}"]`)?.focus();
+      };
+      const setMethod = (m, keepBoxes) => {
+        method = m;
+        if (m.startsWith('m:')) {
+          const sv = saved.find((x) => 'm:' + x.id === m);
+          boxes = boxEntries(sv ? sv.fields : []);
+          if (sv && sv.rowName && !form.elements.rowName.value) form.elements.rowName.value = sv.rowName;
+        } else if (!keepBoxes && !['mine', 'keep', 'weightreps', 'check'].includes(m)) boxes = presetFields(m);
+        else if (m === 'mine' && !keepBoxes && !boxes.length) boxes = [];
+        draw();
+      };
+      form.elements.method.addEventListener('change', (ev) => setMethod(ev.target.value, false));
+      editor.addEventListener('input', (ev) => {
+        const t0 = ev.target;
+        if (t0.dataset.bl != null) boxes[+t0.dataset.bl].label = t0.value;
+        else if (t0.dataset.bu != null) boxes[+t0.dataset.bu].unit = t0.value;
+        else if (t0.dataset.lab != null) labels[t0.dataset.lab] = t0.value.trim();
+      });
+      editor.addEventListener('click', (ev) => {
+        const del = ev.target.closest('[data-bdel]'), add = ev.target.closest('[data-badd]'), q = ev.target.closest('[data-bquick]');
+        if (del) { boxes.splice(+del.dataset.bdel, 1); draw(); }
+        else if (add) addBox();
+        else if (q) addBox(catalogName(q.dataset.bquick));
+      });
+      form.elements.saveMethod.addEventListener('change', (ev) => { s.querySelector('[data-method-name]').hidden = !ev.target.checked; });
+      // starting from an exercise in the library is optional: it only fills in the title and the way of counting
       s.querySelector('[data-from-lib]').addEventListener('click', () => {
         exercisePicker((id) => {
           const ex = getEx(id);
-          form.elements.title.value = exName(ex);
-          method.value = methodOf(ex);
-          sync();
+          if (!form.elements.title.value.trim()) form.elements.title.value = exName(ex);
+          const m = presetOf(ex);
+          if (ex.type === 'custom') boxes = boxEntries(ex.fields);
+          form.elements.method.value = m;
+          setMethod(m, ex.type === 'custom');
         }, t('from_library'));
       });
       form.addEventListener('submit', (ev) => {
         ev.preventDefault();
         const fd = new FormData(form);
         const title = String(fd.get('title')).trim();
-        const m = String(fd.get('method'));
-        const err = (k) => { s.querySelector('[data-err]').textContent = t(k); };
         if (!title) return err('section_need_title');
         const obj = { id: existing ? existing.id : 'c_' + uid(), name: title, muscle: 'section', equip: 'other', section: true, createdAt: existing?.createdAt || Date.now() };
-        if (m === 'check') obj.type = 'check';
-        else if (m === 'minutes') Object.assign(obj, { type: 'cardio', dist: null, extra: null });
-        else if (m === 'minkm') Object.assign(obj, { type: 'cardio', dist: 'km', extra: null });
-        else if (m === 'weightreps') obj.type = 'weight';
-        else if (m === 'reps') obj.type = 'bodyweight';
-        else if (m === 'seconds') obj.type = 'time';
+        const rn = String(fd.get('rowName') || '').trim();
+        if (rn) obj.rowName = rn;
+        applyLocation(obj, String(fd.get('loc') || 'section'));
+        if (method === 'check') obj.type = 'check';
+        else if (method === 'weightreps') obj.type = 'weight';
+        else if (method === 'keep') Object.assign(obj, { type: existing.type, dist: existing.dist, extra: existing.extra });
         else {
-          const fields = BOXES.filter(([k]) => fd.get('box_' + k) === 'on').map(([k]) => ({ k }));
-          ['a', 'b'].forEach((k) => { const l = String(fd.get('label_' + k) || '').trim(); if (l) fields.push({ k, label: l }); });
+          const used = new Set(boxes.map((b) => b.k).filter(Boolean));
+          let n = 1;
+          const fresh = () => { while (used.has('f' + n)) n++; used.add('f' + n); return 'f' + n; };
+          const fields = boxes.filter((b) => b.label.trim() || b.unit.trim()).map((b, i) => ({ k: b.k || fresh(), label: b.label.trim() || `${t('box_name_ph')} ${i + 1}`, ...(b.unit.trim() ? { unit: b.unit.trim() } : {}) }));
           if (!fields.length) return err('section_need_box');
-          if (fields.length > 4) return err('section_too_many');
           Object.assign(obj, { type: 'custom', fields });
+          if (fd.get('saveMethod') === 'on') {
+            const nm = String(fd.get('methodName') || '').trim() || title;
+            S.profile.methods = [...userMethods(), { id: 'm_' + uid().slice(0, 8), name: nm, fields: fields.map((f) => ({ ...f, k: '' })), rowName: rn }];
+            saveProfile();
+          }
         }
+        const cleaned = Object.fromEntries(Object.entries(labels).filter(([, v]) => v));
+        if (['weightreps', 'keep'].includes(method) && Object.keys(cleaned).length) obj.labels = cleaned;
         const i = S.exercises.findIndex((x) => x.id === obj.id);
         if (i >= 0) S.exercises[i] = obj; else S.exercises.push(obj);
         persist('exercises', obj);
@@ -1790,8 +1905,71 @@ function sectionSheet(existing, onSaved) {
         toast(t('section_saved'), 'success');
         onSaved && onSaved(obj.id);
       });
+      draw();
     },
   });
+}
+
+/* ---------- Your own sections (library categories) ---------- */
+function categorySheet(existing, onDone) {
+  const parts0 = existing ? existing.parts || [] : [];
+  openSheet(`<form class="sheet-body" data-catform>
+      <div class="sheet-title"><h3>${existing ? t('cat_edit') : t('cat_new')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
+      <label class="field"><span>${t('cat_name')}</span><input class="input" name="name" value="${esc(existing ? existing.name : '')}" maxlength="30" placeholder="${t('cat_name_ph')}" required autofocus/></label>
+      <p class="muted small">${t('cat_parts_hint')}</p>
+      <div class="inline-form cat-parts">${[0, 1, 2, 3].map((i) => `<label class="field"><span>${t('cat_part')} ${i + 1}</span><input class="input" name="part${i}" value="${esc((parts0[i] || {}).name || '')}" maxlength="24"/></label>`).join('')}</div>
+      <p class="form-err" data-err role="alert"></p>
+      <div class="row-actions">${existing ? `<button type="button" class="btn btn-ghost danger" data-del>${icon('trash')}${t('delete')}</button>` : ''}<button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
+    </form>`, {
+    onMount: (s, close) => {
+      const form = s.querySelector('[data-catform]');
+      form.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(form);
+        const name = String(fd.get('name')).trim();
+        if (!name) return;
+        const taken = userSections().some((x) => x.id !== (existing && existing.id) && x.name.trim().toLowerCase() === name.toLowerCase());
+        if (taken) { s.querySelector('[data-err]').textContent = t('cat_dup'); return; }
+        const parts = [0, 1, 2, 3].map((i) => {
+          const nm = String(fd.get('part' + i) || '').trim();
+          return nm ? { id: (parts0[i] && parts0[i].id) || 'p_' + uid().slice(0, 8), name: nm } : null;
+        }).filter(Boolean);
+        const sec = { id: existing ? existing.id : 's_' + uid().slice(0, 10), name, parts };
+        S.profile.sections = existing ? userSections().map((x) => (x.id === sec.id ? sec : x)) : [...userSections(), sec];
+        saveProfile();
+        close();
+        toast(t('saved'), 'success');
+        onDone && onDone(sec.id);
+      });
+      const del = s.querySelector('[data-del]');
+      if (del) del.addEventListener('click', async () => {
+        close();
+        if (!(await confirmDialog({ title: t('cat_delete_q'), body: t('cat_delete_body'), ok: t('delete'), cancel: t('cancel'), danger: true }))) return;
+        S.profile.sections = userSections().filter((x) => x.id !== existing.id);
+        S.exercises.filter((e) => e.cat === existing.id).forEach((e) => { delete e.cat; delete e.part; persist('exercises', e); });
+        saveProfile();
+        onDone && onDone(null);
+      });
+    },
+  });
+}
+
+// "Where does it live": one of the app's sections, one of yours, or (for a custom box) nowhere in particular
+const locValue = (e) => (e.cat ? `cat:${e.cat}${e.part ? ':' + e.part : ''}` : e.muscle);
+function locationSelect(e, allowNone) {
+  const cur = locValue(e);
+  const opt = (v, label) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${label}</option>`;
+  const built = MUSCLES.map((m) => opt(m, t('m_' + m))).join('');
+  const own = userSections().map((sc) => opt('cat:' + sc.id, esc(sc.name)) + (sc.parts || []).map((p) => opt(`cat:${sc.id}:${p.id}`, `${esc(sc.name)} · ${esc(p.name)}`)).join('')).join('');
+  return `<label class="field"><span>${t('cat_where')}</span><select class="input" name="loc">
+      ${allowNone || cur === 'section' ? opt('section', t('cat_none')) : ''}
+      <optgroup label="${t('cat_builtin')}">${built}</optgroup>
+      ${own ? `<optgroup label="${t('cat_mine')}">${own}</optgroup>` : ''}
+    </select></label>`;
+}
+function applyLocation(obj, v) {
+  delete obj.cat; delete obj.part;
+  if (v.startsWith('cat:')) { const [, cid, pid] = v.split(':'); obj.muscle = 'section'; obj.cat = cid; if (pid) obj.part = pid; } else obj.muscle = v;
 }
 
 function exerciseForm(existing, presetName = '', onSaved) {
@@ -1800,7 +1978,7 @@ function exerciseForm(existing, presetName = '', onSaved) {
   openSheet(`<form class="sheet-body" data-exform>
       <div class="sheet-title"><h3>${existing ? t('edit_exercise') : t('new_exercise')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <label class="field"><span>${t('name')}</span><input class="input" name="name" value="${esc(e.name || '')}" required autofocus/></label>
-      <label class="field"><span>${t('muscle')}</span><select class="input" name="muscle">${MUSCLES.map((m) => `<option value="${m}" ${e.muscle === m ? 'selected' : ''}>${t('m_' + m)}</option>`).join('')}</select></label>
+      ${locationSelect(e, false)}
       <label class="field"><span>${t('equipment')}</span><select class="input" name="equip">${EQUIP.map((m) => `<option value="${m}" ${e.equip === m ? 'selected' : ''}>${t('eq_' + m)}</option>`).join('')}</select></label>
       <label class="field"><span>${t('tracking')}</span><select class="input" name="type">${['weight', 'bodyweight', 'time', 'carry', 'cardio'].map((m) => `<option value="${m}" ${e.type === m ? 'selected' : ''}>${t('ty_' + m)}</option>`).join('')}</select></label>
       <div class="cardio-opts" ${e.type === 'cardio' ? '' : 'hidden'}>
@@ -1815,7 +1993,8 @@ function exerciseForm(existing, presetName = '', onSaved) {
       form.addEventListener('submit', (ev) => {
       ev.preventDefault();
       const fd = new FormData(ev.target);
-      const obj = { id: existing ? existing.id : 'c_' + uid(), name: String(fd.get('name')).trim(), muscle: fd.get('muscle'), equip: fd.get('equip'), type: fd.get('type'), createdAt: existing?.createdAt || Date.now() };
+      const obj = { id: existing ? existing.id : 'c_' + uid(), name: String(fd.get('name')).trim(), muscle: 'chest', equip: fd.get('equip'), type: fd.get('type'), createdAt: existing?.createdAt || Date.now() };
+      applyLocation(obj, String(fd.get('loc') || 'chest'));
       if (obj.type === 'cardio') { obj.dist = fd.get('dist') || null; obj.extra = fd.get('extra') || null; }
       if (!obj.name) return;
       const i = S.exercises.findIndex((x) => x.id === obj.id);
@@ -1874,7 +2053,7 @@ function exerciseSheet(id) {
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(e))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       ${demoHtml(id)}
-      <p class="muted">${t('m_' + e.muscle)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
+      <p class="muted">${muscleName(e)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
       ${b.sessions ? `<div class="pr-grid">
         <div><small>${t('sessions')}</small><b>${b.sessions}</b></div>
         <div><small>${t('last_done')}</small><b>${fmtDate(b.last, { day: 'numeric', month: 'short' })}</b></div>
@@ -2234,6 +2413,8 @@ A['ms-del'] = (el) => { S.measurements = S.measurements.filter((x) => x.id !== e
 // Exercises
 A['ex-filter'] = (el) => { S.ui.exFilter = el.dataset.m; S.ui.exSub = ''; render(); };
 A['ex-sub'] = (el) => { S.ui.exSub = el.dataset.m; render(); };
+A['cat-add'] = () => categorySheet(null, (id) => { S.ui.exFilter = 'cat:' + id; S.ui.exSub = ''; render(); });
+A['cat-edit'] = (el) => categorySheet(secById(el.dataset.id), (id) => { S.ui.exFilter = id ? 'cat:' + id : 'all'; S.ui.exSub = ''; render(); });
 A['ex-open'] = (el) => exerciseSheet(el.dataset.id);
 A['ex-new'] = () => exerciseForm(null);
 

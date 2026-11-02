@@ -1172,6 +1172,321 @@ export const MEDIA = {
    "Rope jumping is exciting, challenges your coordination, and requires a lot of energy. A 150 lb person will burn about 350 calories jumping rope for 30 minutes, compared to over 450 calories running."
   ]
  },
+ "wu_arm_circles": {
+  "imgs": [
+   "Arm_Circles/0.jpg",
+   "Arm_Circles/1.jpg"
+  ],
+  "steps": [
+   "Stand up and extend your arms straight out by the sides. The arms should be parallel to the floor and perpendicular (90-degree angle) to your torso. This will be your starting position.",
+   "Slowly start to make circles of about 1 foot in diameter with each outstretched arm. Breathe normally as you perform the movement.",
+   "Continue the circular motion of the outstretched arms for about ten seconds. Then reverse the movement, going the opposite direction."
+  ]
+ },
+ "wu_shoulder_circles": {
+  "imgs": [
+   "Shoulder_Circles/0.jpg",
+   "Shoulder_Circles/1.jpg"
+  ],
+  "steps": [
+   "With shoulders relaxed and arms resting loosely at your sides (or in your lap if you're seated), gently roll your shoulders forward, up, back, and down.",
+   "Reverse direction. You can do this exercise alternating shoulders or both at the same time."
+  ]
+ },
+ "wu_elbow_circles": {
+  "imgs": [
+   "Elbow_Circles/0.jpg",
+   "Elbow_Circles/1.jpg"
+  ],
+  "steps": [
+   "Sit or stand with your feet slightly apart.",
+   "Place your hands on your shoulders with your elbows at shoulder level and pointing out.",
+   "Slowly make a circle with your elbows. Breathe out as you start the circle and breathe in as you complete the circle."
+  ]
+ },
+ "wu_wrist_circles": {
+  "imgs": [
+   "Wrist_Circles/0.jpg",
+   "Wrist_Circles/1.jpg"
+  ],
+  "steps": [
+   "Start by standing straight with your feet being shoulder width apart from each other. Elevate your arms to the side of you until they are fully extended and parallel to the floor at a height that is evenly aligned with your shoulders. Tip: Your torso and arms should form the letter \"T: Your palms should be facing down. This is the starting position.",
+   "Keeping your entire body stationary except for the wrists, begin to rotate both wrists forward in a circular motion. Tip: Pretend that you are trying to draw circles by using your hands as the brush. Breathe normally as you perform this exercise.",
+   "Repeat for the recommended amount of repetitions."
+  ]
+ },
+ "wu_torso_rot": {
+  "imgs": [
+   "Torso_Rotation/0.jpg",
+   "Torso_Rotation/1.jpg"
+  ],
+  "steps": [
+   "Stand upright holding an exercise ball with both hands. Extend your arms so the ball is straight out in front of you. This will be your starting position.",
+   "Rotate your torso to one side, keeping your eyes on the ball as you move. Now, rotate back to the opposite direction. Repeat for 10-20 repetitions."
+  ]
+ },
+ "wu_chest_stretch": {
+  "imgs": [
+   "Dynamic_Chest_Stretch/0.jpg",
+   "Dynamic_Chest_Stretch/1.jpg"
+  ],
+  "steps": [
+   "Stand with your hands together, arms extended directly in front of you. This will be your starting position.",
+   "Keeping your arms straight, quickly move your arms back as far as possible and back in again, similar to an exaggerated clapping motion. Repeat 5-10 times, increasing speed as you do so."
+  ]
+ },
+ "wu_back_stretch": {
+  "imgs": [
+   "Dynamic_Back_Stretch/0.jpg",
+   "Dynamic_Back_Stretch/1.jpg"
+  ],
+  "steps": [
+   "Stand with your feet shoulder width apart. This will be your starting position.",
+   "Keeping your arms straight, swing them straight up in front of you 5-10 times, increasing the range of motion each time until your arms are above your head."
+  ]
+ },
+ "wu_band_pull_apart": {
+  "imgs": [
+   "Band_Pull_Apart/0.jpg",
+   "Band_Pull_Apart/1.jpg"
+  ],
+  "steps": [
+   "Begin with your arms extended straight out in front of you, holding the band with both hands.",
+   "Initiate the movement by performing a reverse fly motion, moving your hands out laterally to your sides.",
+   "Keep your elbows extended as you perform the movement, bringing the band to your chest. Ensure that you keep your shoulders back during the exercise.",
+   "Pause as you complete the movement, returning to the starting position under control."
+  ]
+ },
+ "wu_cat_stretch": {
+  "imgs": [
+   "Cat_Stretch/0.jpg",
+   "Cat_Stretch/1.jpg"
+  ],
+  "steps": [
+   "Position yourself on the floor on your hands and knees.",
+   "Pull your belly in and round your spine, lower back, shoulders, and neck, letting your head drop.",
+   "Hold for 15 seconds."
+  ]
+ },
+ "wu_inchworm": {
+  "imgs": [
+   "Inchworm/0.jpg",
+   "Inchworm/1.jpg"
+  ],
+  "steps": [
+   "Stand with your feet close together. Keeping your legs straight, stretch down and put your hands on the floor directly in front of you. This will be your starting position.",
+   "Begin by walking your hands forward slowly, alternating your left and your right. As you do so, bend only at the hip, keeping your legs straight.",
+   "Keep going until your body is parallel to the ground in a pushup position.",
+   "Now, keep your hands in place and slowly take short steps with your feet, moving only a few inches at a time.",
+   "Continue walking until your feet are by hour hands, keeping your legs straight as you do so."
+  ]
+ },
+ "wu_scap_pullup": {
+  "imgs": [
+   "Scapular_Pull-Up/0.jpg",
+   "Scapular_Pull-Up/1.jpg"
+  ],
+  "steps": [
+   "Take a pronated grip on a pull-up bar.",
+   "From a hanging position, raise yourself a few inches without using your arms. Do this by depressing your shoulder girdle in a reverse shrugging motion.",
+   "Pause at the completion of the movement, and then slowly return to the starting position before performing more repetitions."
+  ]
+ },
+ "wu_jumping_jacks": {
+  "imgs": [
+   "Star_Jump/0.jpg",
+   "Star_Jump/1.jpg"
+  ],
+  "steps": [
+   "Begin in a relaxed stance with your feet shoulder width apart and hold your arms close to the body.",
+   "To initiate the move, squat down halfway and explode back up as high as possible. Fully extend your entire body, spreading your legs and arms away from the body.",
+   "As you land, bring your limbs back in and absorb your impact through the legs."
+  ]
+ },
+ "wu_hip_circles": {
+  "imgs": [
+   "Standing_Hip_Circles/0.jpg",
+   "Standing_Hip_Circles/1.jpg"
+  ],
+  "steps": [
+   "Begin standing on one leg, holding to a vertical support.",
+   "Raise the unsupported knee to 90 degrees. This will be your starting position.",
+   "Open the hip as far as possible, attempting to make a big circle with your knee.",
+   "Perform this movement slowly for a number of repetitions, and repeat on the other side."
+  ]
+ },
+ "wu_knee_circles": {
+  "imgs": [
+   "Knee_Circles/0.jpg",
+   "Knee_Circles/1.jpg"
+  ],
+  "steps": [
+   "Stand with your legs together and hands by your waist.",
+   "Now move your knees in a circular motion as you breathe normally.",
+   "Repeat for the recommended amount of repetitions."
+  ]
+ },
+ "wu_ankle_circles": {
+  "imgs": [
+   "Ankle_Circles/0.jpg",
+   "Ankle_Circles/1.jpg"
+  ],
+  "steps": [
+   "Use a sturdy object like a squat rack to hold yourself.",
+   "Lift the right leg in the air (just around 2 inches from the floor) and perform a circular motion with the big toe. Pretend that you are drawing a big circle with it. Tip: One circle equals 1 repetition. Breathe normally as you perform the movement.",
+   "When you are done with the right foot, then repeat with the left leg."
+  ]
+ },
+ "wu_leg_swing_front": {
+  "imgs": [
+   "Front_Leg_Raises/0.jpg",
+   "Front_Leg_Raises/1.jpg"
+  ],
+  "steps": [
+   "Stand next to a chair or other support, holding on with one hand.",
+   "Swing your leg forward, keeping the leg straight. Continue with a downward swing, bringing the leg as far back as your flexibility allows. Repeat 5-10 times, and then switch legs."
+  ]
+ },
+ "wu_leg_swing_side": {
+  "imgs": [
+   "Side_Leg_Raises/0.jpg",
+   "Side_Leg_Raises/1.jpg"
+  ],
+  "steps": [
+   "Stand next to a chair, which you may hold onto as a support. Stand on one leg. This will be your starting position.",
+   "Keeping your leg straight, raise it as far out to the side as possible, and swing it back down, allowing it to cross the opposite leg.",
+   "Repeat this swinging motion 5-10 times, increasing the range of motion as you do so."
+  ]
+ },
+ "wu_leg_swing_back": {
+  "imgs": [
+   "Rear_Leg_Raises/0.jpg",
+   "Rear_Leg_Raises/1.jpg"
+  ],
+  "steps": [
+   "Place yourself on your hands knees on an exercise mat. Your head should be looking forward and the bend of the knees should create a 90-degree angle between the hamstrings and the calves. This will be your starting position.",
+   "Extend one leg up and behind you. The knee and hip should both extend. Repeat for 5-10 repetitions, and then switch sides."
+  ]
+ },
+ "wu_toe_touch": {
+  "imgs": [
+   "Standing_Toe_Touches/0.jpg",
+   "Standing_Toe_Touches/1.jpg"
+  ],
+  "steps": [
+   "Stand with some space in front and behind you.",
+   "Bend at the waist, keeping your legs straight, until you can relax and let your upper body hang down in front of you. Let your arms and hands hang down naturally. Hold for 10 to 20 seconds."
+  ]
+ },
+ "wu_squat": {
+  "imgs": [
+   "Bodyweight_Squat/0.jpg",
+   "Bodyweight_Squat/1.jpg"
+  ],
+  "steps": [
+   "Stand with your feet shoulder width apart. You can place your hands behind your head. This will be your starting position.",
+   "Begin the movement by flexing your knees and hips, sitting back with your hips.",
+   "Continue down to full depth if you are able,and quickly reverse the motion until you return to the starting position. As you squat, keep your head and chest up and push your knees out."
+  ]
+ },
+ "wu_lunge": {
+  "imgs": [
+   "Bodyweight_Walking_Lunge/0.jpg",
+   "Bodyweight_Walking_Lunge/1.jpg"
+  ],
+  "steps": [
+   "Begin standing with your feet shoulder width apart and your hands on your hips.",
+   "Step forward with one leg, flexing the knees to drop your hips. Descend until your rear knee nearly touches the ground. Your posture should remain upright, and your front knee should stay above the front foot.",
+   "Drive through the heel of your lead foot and extend both knees to raise yourself back up.",
+   "Step forward with your rear foot, repeating the lunge on the opposite leg."
+  ]
+ },
+ "wu_glute_bridge": {
+  "imgs": [
+   "Butt_Lift_Bridge/0.jpg",
+   "Butt_Lift_Bridge/1.jpg"
+  ],
+  "steps": [
+   "Lie flat on the floor on your back with the hands by your side and your knees bent. Your feet should be placed around shoulder width. This will be your starting position.",
+   "Pushing mainly with your heels, lift your hips off the floor while keeping your back straight. Breathe out as you perform this part of the motion and hold at the top for a second.",
+   "Slowly go back to the starting position as you breathe in."
+  ]
+ },
+ "wu_monster_walk": {
+  "imgs": [
+   "Monster_Walk/0.jpg",
+   "Monster_Walk/1.jpg"
+  ],
+  "steps": [
+   "Place a band around both ankles and another around both knees. There should be enough tension that they are tight when your feet are shoulder width apart.",
+   "To begin, take short steps forward alternating your left and right foot.",
+   "After several steps, do just the opposite and walk backward to where you started."
+  ]
+ },
+ "wu_butt_kick": {
+  "imgs": [
+   "Double_Leg_Butt_Kick/0.jpg",
+   "Double_Leg_Butt_Kick/1.jpg"
+  ],
+  "steps": [
+   "Begin standing with your knees slightly bent.",
+   "Quickly squat a short distance, flexing the hips and knees, and immediately extend to jump for maximum vertical height.",
+   "As you go up, tuck your heels by flexing the knees, attempting to touch the buttocks.",
+   "Finish the motion by landing with the knees only partially bent, using your legs to absorb the impact."
+  ]
+ },
+ "wu_hug_knees": {
+  "imgs": [
+   "Hug_Knees_To_Chest/0.jpg",
+   "Hug_Knees_To_Chest/1.jpg"
+  ],
+  "steps": [
+   "Lie down on your back and pull both knees up to your chest.",
+   "Hold your arms under the knees, not over (that would put to much pressure on your knee joints).",
+   "Slowly pull the knees toward your shoulders. This also stretches your buttocks muscles."
+  ]
+ },
+ "wu_hip_flexor": {
+  "imgs": [
+   "Kneeling_Hip_Flexor/0.jpg",
+   "Kneeling_Hip_Flexor/1.jpg"
+  ],
+  "steps": [
+   "Kneel on a mat and bring your right knee up so the bottom of your foot is on the floor and extend your left leg out behind you so the top of your foot is on the floor.",
+   "Shift your weight forward until you feel a stretch in your hip. Hold for 15 seconds, then repeat for your other side."
+  ]
+ },
+ "wu_worlds": {
+  "imgs": [
+   "Worlds_Greatest_Stretch/0.jpg",
+   "Worlds_Greatest_Stretch/1.jpg"
+  ],
+  "steps": [
+   "This is a three-part stretch. Begin by lunging forward, with your front foot flat on the ground and on the toes of your back foot. With your knees bent, squat down until your knee is almost touching the ground. Keep your torso erect, and hold this position for 10-20 seconds.",
+   "Now, place the arm on the same side as your front leg on the ground, with the elbow next to the foot. Your other hand should be placed on the ground, parallel to your lead leg, to help support you during this portion of the stretch.",
+   "After 10-20 seconds, place your hands on either side of your front foot. Raise the toes of the front foot off of the ground, and straighten your leg. You may need to reposition your rear leg to do so. Hold for 10-20 seconds, and then repeat the entire sequence for the other side."
+  ]
+ },
+ "wu_walk": {
+  "imgs": [
+   "Walking_Treadmill/0.jpg",
+   "Walking_Treadmill/1.jpg"
+  ],
+  "steps": [
+   "To begin, step onto the treadmill and select the desired option from the menu. Most treadmills have a manual setting, or you can select a program to run. Typically, you can enter your age and weight to estimate the amount of calories burned during exercise. Elevation can be adjusted to change the intensity of the workout.",
+   "Treadmills offer convenience, cardiovascular benefits, and usually have less impact than walking outside. When walking, you should move at a moderate to fast pace, not a leisurely one. Being an activity of lower intensity, walking doesn't burn as many calories as some other activities, but still provides great benefit. A 150 lb person will burn about 175 calories walking 4 miles per hour for 30 minutes, compared to 450 calories running twice as fast. Maintain proper posture as you walk, and only hold onto the handles when necessary, such as when dismounting or checking your heart rate."
+  ]
+ },
+ "wu_mountain": {
+  "imgs": [
+   "Mountain_Climbers/0.jpg",
+   "Mountain_Climbers/1.jpg"
+  ],
+  "steps": [
+   "Begin in a pushup position, with your weight supported by your hands and toes. Flexing the knee and hip, bring one leg until the knee is approximately under the hip. This will be your starting position.",
+   "Explosively reverse the positions of your legs, extending the bent leg until the leg is straight and supported by the toe, and bringing the other foot up with the hip and knee flexed. Repeat in an alternating fashion for 20-30 seconds."
+  ]
+ },
  "kb_swing": {
   "imgs": [
    "One-Arm_Kettlebell_Swings/0.jpg",
