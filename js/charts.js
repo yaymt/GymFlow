@@ -109,27 +109,29 @@ export function barbell(done, goal) {
   const W = 360, H = 120, cy = 60;
   const slots = Math.max(goal, done);
   const perSide = Math.ceil(slots / 2);
-  const plateW = 13, gap = 3;
-  const sleeveStart = 92, sleeveLen = perSide * (plateW + gap) + 12;
+  // each plate is clearly smaller than the one before it: tall and wide near the middle, small at the tip
+  const gap = 3;
+  const hOf = (k) => Math.max(26, 96 - k * 17);
+  const wOf = (k) => Math.max(8, 16 - k * 2);
+  let used = 0;
+  for (let k = 0; k < perSide; k++) used += wOf(k) + gap;
+  const sleeveStart = 92, sleeveLen = used + 12;
   let plates = '';
-  const plate = (x, i, filled) => {
-    const h = 88 - Math.min(i, 3) * 6;
+  const plate = (x, k, i, filled) => {
+    const h = hOf(k), w = wOf(k);
     return filled
-      ? `<rect x="${x}" y="${cy - h / 2}" width="${plateW}" height="${h}" rx="3" style="fill:${PLATE_COLORS[i % 4]}" class="plate"/>`
-      : `<rect x="${x + 0.75}" y="${cy - h / 2 + 0.75}" width="${plateW - 1.5}" height="${h - 1.5}" rx="3" class="plate-ghost"/>`;
+      ? `<rect x="${x}" y="${cy - h / 2}" width="${w}" height="${h}" rx="3" style="fill:${PLATE_COLORS[i % 4]}" class="plate"/>`
+      : `<rect x="${x + 0.75}" y="${cy - h / 2 + 0.75}" width="${w - 1.5}" height="${h - 1.5}" rx="3" class="plate-ghost"/>`;
   };
   // order: plates alternate right, left (index 0 right, 1 left, ...)
+  const off = [0];
+  for (let k = 0; k < perSide; k++) off.push(off[k] + wOf(k) + gap);
   for (let i = 0; i < slots; i++) {
-    const side = i % 2 === 0 ? 1 : -1;
     const k = Math.floor(i / 2);
     const filled = i < done;
-    if (side === 1) {
-      const x = W - sleeveStart + 6 + k * (plateW + gap);
-      plates += plate(x, k, filled);
-    } else {
-      const x = sleeveStart - 6 - plateW - k * (plateW + gap);
-      plates += plate(x, k, filled);
-    }
+    plates += i % 2 === 0
+      ? plate(W - sleeveStart + 6 + off[k], k, k, filled)
+      : plate(sleeveStart - 6 - wOf(k) - off[k], k, k, filled);
   }
   const leftEnd = Math.max(8, sleeveStart - sleeveLen);
   const rightEnd = Math.min(W - 8, W - sleeveStart + sleeveLen);
