@@ -858,3 +858,12 @@ button.wrow { width: 100%; text-align: start; font: inherit; color: inherit; }
 .name-status { min-height: 1.2em; color: var(--muted); }
 .name-status.good { color: var(--success); }
 .name-status.bad { color: var(--danger); }
+
+/* ---------- Custom sections ---------- */
+.setrow.nopre.cols-0 { grid-template-columns: 34px 1fr 44px; }
+.check-label { font-size: .9rem; padding-inline: 4px; }
+.box-opts { display: grid; gap: 12px; }
+.box-opts[hidden] { display: none; }
+.add-pair { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+.add-pair .btn-dashed { min-height: 52px; padding-inline: 6px; font-size: .9rem; }
+.setrow.nopre .input { padding-inline: 2px; min-width: 0; }

@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 
 /* =========================================================
    State
@@ -86,8 +86,21 @@ const distLabel = (d) => (d === 'm' ? t('m_short') : d === 'floors' ? t('floors'
 const extraName = (k) => (CARDIO_EXTRAS[k] ? CARDIO_EXTRAS[k][lang()] : k);
 const extraLabel = (k) => extraName(k) + (CARDIO_EXTRAS[k]?.unit ? ` ${CARDIO_EXTRAS[k].unit}` : '');
 const extraText = (k, v) => `${extraName(k)} ${fmtNum(v)}${CARDIO_EXTRAS[k]?.unit || ''}`;
+// Custom sections: a box you design yourself. "check" = just a tick and a note; "custom" = the boxes you pick.
+const BOXES = [['min', 'box_min'], ['sec', 'box_sec'], ['km', 'box_km'], ['m', 'box_m'], ['reps', 'box_reps'], ['kcal', 'box_kcal']];
+const isSection = (type) => type === 'check' || type === 'custom';
+const sectionFields = (exId) => getEx(exId).fields || [];
+const boxLabel = (b) => b.label || t((BOXES.find(([k]) => k === b.k) || [])[1] || 'box_min');
+const noSets = (exId) => { const ty = exType(exId); return ty === 'cardio' || isSection(ty); };
+const blankSet = (exId) => {
+  const st = { w: '', r: '', x: '', done: false };
+  if (exType(exId) === 'custom') sectionFields(exId).forEach((b) => (st[b.k] = ''));
+  return st;
+};
 const colsFor = (exId) => {
   const type = exType(exId);
+  if (type === 'check') return [];
+  if (type === 'custom') return sectionFields(exId).map((b) => ({ f: b.k, l: boxLabel(b) }));
   if (type === 'weight') return [{ f: 'w', l: uLabel() }, { f: 'r', l: t('reps') }];
   if (type === 'bodyweight') return [{ f: 'w', l: '+' + uLabel() }, { f: 'r', l: t('reps') }];
   if (type === 'time') return [{ f: 'r', l: t('sec') }];
@@ -98,6 +111,7 @@ const colsFor = (exId) => {
 // What a plan item asks for, e.g. "4×8", "30 min", "3×45s"
 const targetText = (it) => {
   const type = exType(it.exId), reps = esc(it.reps || '');
+  if (isSection(type)) return reps;
   if (type === 'cardio') return reps ? `${reps} ${t('min_short')}` : '';
   if (type === 'time') return `${it.sets}×${reps}${t('sec_short')}`;
   if (type === 'carry') return `${it.sets}×${reps}${t('m_short')}`;
@@ -105,6 +119,7 @@ const targetText = (it) => {
 };
 const itemDefaults = (exId) => {
   const type = exType(exId);
+  if (isSection(type)) return { sets: 1, reps: '' };
   return type === 'cardio' ? { sets: 1, reps: '30' } : type === 'time' ? { sets: 3, reps: '45' } : type === 'carry' ? { sets: 3, reps: '30' } : type === 'bodyweight' ? { sets: 3, reps: '10-15' } : { sets: 3, reps: '8-12' };
 };
 
@@ -122,6 +137,7 @@ const workoutSets = (w) => (w.exercises || []).reduce((s, e) => s + (e.sets || [
 // Best-of stats for types that are not weight × reps
 function otherCells(type, b, exId) {
   const cell = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
+  if (isSection(type)) return '';
   if (type === 'cardio') {
     const c = cardioDef(exId);
     return cell(t('met_mins'), `${b.reps} ${t('min_short')}`) + (c.dist ? cell(t('met_dist'), `${fmtNum(b.weight)} ${distLabel(c.dist)}`) : '');
@@ -655,9 +671,9 @@ VIEWS.plan = (r) => {
         ${d.items.map((it, ii) => `
         <div class="item-row">
           <button class="item-name" data-act="item-menu" data-d="${di}" data-i="${ii}">${esc(exName(it.exId))}<small>${t('m_' + getEx(it.exId).muscle)}${exType(it.exId) === 'cardio' ? ` · ${t('ty_cardio_short')}` : ''}</small></button>
-          ${exType(it.exId) === 'cardio'
+          ${noSets(it.exId)
             ? `<span class="item-na">–</span>
-          <input class="input input-num" inputmode="numeric" value="${esc(it.reps)}" placeholder="${t('min')}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${t('min')}"/>
+          <input class="input input-num" value="${esc(it.reps)}" placeholder="${isSection(exType(it.exId)) ? t('target') : t('min')}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${isSection(exType(it.exId)) ? t('target') : t('min')}"/>
           <span class="item-na">–</span>`
             : `<input class="input input-num" inputmode="numeric" value="${esc(it.sets)}" data-pe="it-sets" data-d="${di}" data-i="${ii}" aria-label="${t('sets')}"/>
           <input class="input input-num" value="${esc(it.reps)}" placeholder="${exType(it.exId) === 'time' ? t('sec') : exType(it.exId) === 'carry' ? t('m_short') : ''}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${t('reps')}"/>
@@ -667,6 +683,7 @@ VIEWS.plan = (r) => {
       </div>
       <div class="row-actions start">
         <button class="btn btn-ghost btn-sm" data-act="item-add" data-d="${di}">${icon('plus')}${t('add_exercise')}</button>
+        <button class="btn btn-ghost btn-sm" data-act="section-add" data-d="${di}">${icon('plus')}${t('add_section')}</button>
         ${d.items.length ? `<button class="btn btn-primary btn-sm" data-act="start-day" data-plan="${p.id}" data-day="${d.id}">${icon('play')}${t('start')}</button>` : ''}
       </div>
     </section>`).join('');
@@ -698,6 +715,11 @@ const cardioSpeed = (s, exId) => (cardioDef(exId).dist === 'km' && s && s.r > 0 
 
 function prevText(type, s, aUnit, exId) {
   if (!s) return '–';
+  if (type === 'check') return '✓';
+  if (type === 'custom') {
+    const parts = sectionFields(exId).filter((b) => s[b.k] != null && s[b.k] !== '').map((b) => `${fmtNum(s[b.k])} ${boxLabel(b)}`);
+    return parts.join(' · ') || '✓';
+  }
   const w = isLoad(type) ? (aUnit === 'lb' ? s.w * LB : s.w) : s.w;
   if (type === 'time') return `${s.r || 0}${t('sec_short')}`;
   if (type === 'carry') return ltr(`${fmtNum(w || 0)} × ${s.r || 0}${t('m_short')}`);
@@ -719,6 +741,8 @@ VIEWS.log = () => {
   const blocks = A.exercises.map((e, i) => {
     const type = exType(e.exId);
     const cardio = type === 'cardio';
+    const section = isSection(type);
+    const nopre = cardio || section;
     const cols = colsFor(e.exId);
     const prev = lastSetsFor(e.exId, A.editingId, before) || [];
     const rows = e.sets.map((s, j) => {
@@ -728,18 +752,19 @@ VIEWS.log = () => {
       const no = type === 'weight'
         ? `<button class="setno ${s.kind === 'warm' ? 'warm' : ''}" data-act="set-kind" data-i="${i}" data-j="${j}" aria-label="${t('set_type')}">${s.kind === 'warm' ? 'W' : j + 1 - e.sets.slice(0, j).filter((x) => x.kind === 'warm').length}</button>`
         : `<span class="setno">${j + 1}</span>`;
-      return `<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length} ${cardio ? 'nopre' : ''}" data-i="${i}" data-j="${j}">
+      return `<div class="setrow ${s.done ? 'done' : ''} cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}" data-i="${i}" data-j="${j}">
         ${no}
-        ${cardio ? '' : `<span class="prev">${prev[j] ? prevText(type, prev[j], A.unit, e.exId) : '–'}</span>`}
+        ${nopre ? '' : `<span class="prev">${prev[j] ? prevText(type, prev[j], A.unit, e.exId) : '–'}</span>`}
+        ${type === 'check' ? `<span class="check-label muted">${t('tick_when_done')}</span>` : ''}
         ${cols.map((c) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${c.f}" data-i="${i}" data-j="${j}" value="${esc(s[c.f] ?? '')}" placeholder="${esc(ph(c.f))}" aria-label="${esc(c.l)}"/>`).join('')}
         <button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button>
       </div>`;
     }).join('');
     const ex = getEx(e.exId);
     const unitSfx = type === 'cardio' ? t('min_short') : type === 'time' ? t('sec_short') : type === 'carry' ? t('m_short') : '';
-    const restInfo = cardio ? '' : ` · ${icon('timer')}${e.rest || S.profile.rest || 90}${t('sec_short')}`;
-    const lastLine = cardio && prev.length
-      ? `<p class="prev-line muted small">${t('last_time')}: ${prev.map((x) => prevText(type, x, A.unit, e.exId)).join(' + ')}${cardioSpeed(prev[0], e.exId) ? ` · ${fmtNum(cardioSpeed(prev[0], e.exId))} ${t('kmh')}` : ''}</p>` : '';
+    const restInfo = nopre ? '' : ` · ${icon('timer')}${e.rest || S.profile.rest || 90}${t('sec_short')}`;
+    const lastLine = nopre && prev.length && type !== 'check'
+      ? `<p class="prev-line muted small">${t('last_time')}: ${prev.map((x) => prevText(type, x, A.unit, e.exId)).join(' + ')}${cardio && cardioSpeed(prev[0], e.exId) ? ` · ${fmtNum(cardioSpeed(prev[0], e.exId))} ${t('kmh')}` : ''}</p>` : '';
     return `<section class="exblock" data-i="${i}">
       <div class="exhead">
         <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${t('m_' + ex.muscle)}${e.target ? ` · ${t('target')} ${esc(e.target)}${unitSfx}` : ''}${restInfo}</small></button>
@@ -747,11 +772,11 @@ VIEWS.log = () => {
         <button class="icon-btn sm" data-act="ex-menu" data-i="${i}" aria-label="${t('more')}">${icon('more')}</button>
       </div>
       ${lastLine}
-      <div class="setrow head cols-${cols.length} ${cardio ? 'nopre' : ''}"><span>#</span>${cardio ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>
+      ${cols.length || !section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span>#</span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
       ${rows}
       <div class="exfoot">
-        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${cardio ? t('add_interval') : t('add_set')}</button>
-        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${cardio ? t('remove_interval') : t('remove_set')}</button>` : ''}
+        <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${section ? t('add_row') : cardio ? t('add_interval') : t('add_set')}</button>
+        ${e.sets.length > 1 ? `<button class="btn btn-ghost btn-sm" data-act="set-remove" data-i="${i}">${icon('minus')}${section ? t('remove_row') : cardio ? t('remove_interval') : t('remove_set')}</button>` : ''}
         <input class="input note-in" data-note="${i}" value="${esc(e.note || '')}" placeholder="${t('note_ph')}"/>
       </div>
     </section>`;
@@ -772,7 +797,10 @@ VIEWS.log = () => {
         </div>
       </section>
       ${blocks || empty('dumbbell', t('no_ex_in_workout'), t('no_ex_in_workout_body'))}
-      <button class="btn btn-dashed" data-act="ex-add">${icon('plus')}${t('add_exercise')}</button>
+      <div class="add-pair">
+        <button class="btn btn-dashed" data-act="ex-add">${icon('plus')}${t('add_exercise')}</button>
+        <button class="btn btn-dashed" data-act="section-log">${icon('plus')}${t('add_section')}</button>
+      </div>
       <section class="card log-notes">
         <label class="field"><span>${t('workout_notes')}</span><textarea class="input" rows="2" data-wnote placeholder="${t('workout_notes_ph')}">${esc(A.notes || '')}</textarea></label>
       </section>
@@ -823,13 +851,13 @@ function startWorkout({ planId, dayId, fromWorkout, title } = {}) {
       const d = p && p.days.find((x) => x.id === dayId);
       if (d) {
         A.title = d.name;
-        A.exercises = d.items.map((it) => ({ exId: it.exId, target: it.reps, rest: num(it.rest) || null, note: '', sets: Array.from({ length: exType(it.exId) === 'cardio' ? 1 : Math.max(1, num(it.sets) || 3) }, () => ({ w: '', r: '', x: '', done: false })) }));
+        A.exercises = d.items.map((it) => ({ exId: it.exId, target: it.reps, rest: num(it.rest) || null, note: '', sets: Array.from({ length: noSets(it.exId) ? 1 : Math.max(1, num(it.sets) || 3) }, () => blankSet(it.exId)) }));
       }
     } else if (fromWorkout) {
       const w = S.workouts.find((x) => x.id === fromWorkout);
       if (w) {
         A.title = w.title || '';
-        A.exercises = w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: '', sets: e.sets.map((s) => ({ w: '', r: '', x: '', done: false, kind: s.kind })) }));
+        A.exercises = w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: '', sets: e.sets.map((s) => ({ ...blankSet(e.exId), kind: s.kind })) }));
       }
     }
     if (!A.title) A.title = t('workout') + ' ' + fmtDate(Date.now(), { day: 'numeric', month: 'short' });
@@ -850,7 +878,11 @@ function editWorkout(id) {
     const conv = (v, type) => (v == null ? '' : isLoad(type) ? String(r1(u === 'lb' ? v * LB : v)) : String(v));
     S.active = {
       id: w.id, editingId: w.id, start: w.start, end: w.end, unit: u, title: w.title || '', planId: w.planId || null, dayId: w.dayId || null, notes: w.notes || '',
-      exercises: w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets: e.sets.map((s) => ({ w: conv(s.w, exType(e.exId)), r: s.r == null ? '' : String(s.r), x: s.x == null ? '' : String(s.x), done: true, kind: s.kind })) })),
+      exercises: w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets: e.sets.map((s) => {
+        const o = { w: conv(s.w, exType(e.exId)), r: s.r == null ? '' : String(s.r), x: s.x == null ? '' : String(s.x), done: true, kind: s.kind };
+        if (exType(e.exId) === 'custom') sectionFields(e.exId).forEach((b) => (o[b.k] = s[b.k] == null ? '' : String(s[b.k])));
+        return o;
+      }) })),
     };
     saveActive(true); go('log');
   };
@@ -864,6 +896,16 @@ async function finishWorkout() {
   // Keep sets that are checked or fully filled in
   const exercises = A.exercises.map((e) => {
     const type = exType(e.exId);
+    if (isSection(type)) {
+      // a section keeps the rows you ticked or filled in; only the boxes it has are saved
+      const keys = sectionFields(e.exId).map((b) => b.k);
+      const kept = e.sets.filter((s) => s.done || keys.some((k) => num(s[k]) != null)).map((s) => {
+        const out = { ok: 1 };
+        keys.forEach((k) => { const v = num(s[k]); if (v != null) out[k] = v; });
+        return out;
+      });
+      return { exId: e.exId, target: e.target || '', rest: null, note: e.note || '', sets: kept };
+    }
     const sets = e.sets.filter((s) => {
       const r = num(s.r), w = num(s.w);
       if (type === 'weight') return s.done ? (r != null) : (r != null && w != null);
@@ -1027,7 +1069,7 @@ VIEWS.workout = (r) => {
 VIEWS.progress = (r) => {
   const counts = {};
   S.workouts.forEach((w) => w.exercises.forEach((e) => (counts[e.exId] = (counts[e.exId] || 0) + 1)));
-  const exIds = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  const exIds = Object.keys(counts).filter((id) => !isSection(exType(id))).sort((a, b) => counts[b] - counts[a]);
   if (!S.workouts.length) {
     return { title: t('nav_progress'), html: `<div class="page">${empty('chart', t('no_data'), t('no_data_body'), `<button class="btn btn-primary" data-act="go-train">${t('start_workout')}</button>`)}</div>` };
   }
@@ -1065,7 +1107,7 @@ VIEWS.progress = (r) => {
   const since = Date.now() - 30 * 86400000;
   const muscleSets = {};
   S.workouts.filter((w) => w.start >= since).forEach((w) => w.exercises.forEach((e) => {
-    const mu = getEx(e.exId).muscle; muscleSets[mu] = (muscleSets[mu] || 0) + e.sets.filter((s) => s.kind !== 'warm').length;
+    const mu = getEx(e.exId).muscle; if (mu === 'section') return; muscleSets[mu] = (muscleSets[mu] || 0) + e.sets.filter((s) => s.kind !== 'warm').length;
   }));
   const muscleItems = Object.entries(muscleSets).sort((a, b2) => b2[1] - a[1]).map(([k, v]) => ({ label: t('m_' + k), value: v }));
 
@@ -1668,6 +1710,90 @@ function previewSheet(id, onChoose) {
   });
 }
 
+/* ---------- CUSTOM SECTIONS: a box you design yourself (title, how it is counted, notes) ---------- */
+const SECTION_METHODS = ['check', 'minutes', 'minkm', 'weightreps', 'reps', 'seconds', 'boxes'];
+const methodOf = (ex) => {
+  if (!ex) return 'check';
+  if (ex.type === 'custom') return 'boxes';
+  if (ex.type === 'cardio') return ex.dist ? 'minkm' : 'minutes';
+  if (ex.type === 'weight' || ex.type === 'carry') return 'weightreps';
+  if (ex.type === 'bodyweight') return 'reps';
+  if (ex.type === 'time') return 'seconds';
+  return 'check';
+};
+
+function sectionSheet(existing, onSaved) {
+  const method0 = methodOf(existing);
+  const fields0 = existing && existing.type === 'custom' ? existing.fields || [] : [{ k: 'min' }];
+  const has = (k) => fields0.some((b) => b.k === k);
+  const own = (k) => (fields0.find((b) => b.k === k) || {}).label || '';
+  openSheet(`<form class="sheet-body" data-sectionform>
+      <div class="sheet-title"><h3>${existing ? t('section_edit') : t('add_section')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
+      <label class="field"><span>${t('section_title')}</span><input class="input" name="title" value="${esc(existing ? existing.name : '')}" maxlength="40" placeholder="${t('section_title_ph')}" required autofocus/></label>
+      <button type="button" class="btn btn-ghost btn-sm" data-from-lib>${icon('library')}${t('from_library')}</button>
+      <label class="field"><span>${t('section_method')}</span><select class="input" name="method">${SECTION_METHODS.map((m) => `<option value="${m}" ${m === method0 ? 'selected' : ''}>${t('sm_' + m)}</option>`).join('')}</select></label>
+      <p class="muted small" data-hint></p>
+      <div class="box-opts" ${method0 === 'boxes' ? '' : 'hidden'}>
+        <p class="muted small">${t('boxes_hint')}</p>
+        <div class="chips-wrap">${BOXES.map(([k, lk]) => `<label class="chip-check"><input type="checkbox" name="box_${k}" ${has(k) ? 'checked' : ''}/><span>${t(lk)}</span></label>`).join('')}</div>
+        <div class="inline-form">
+          <label class="field"><span>${t('own_box')} 1</span><input class="input" name="label_a" value="${esc(own('a'))}" maxlength="16" placeholder="${t('own_box_ph')}"/></label>
+          <label class="field"><span>${t('own_box')} 2</span><input class="input" name="label_b" value="${esc(own('b'))}" maxlength="16" placeholder="${t('own_box_ph')}"/></label>
+        </div>
+      </div>
+      <p class="form-err" data-err role="alert"></p>
+      <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
+    </form>`, {
+    onMount: (s, close) => {
+      const form = s.querySelector('[data-sectionform]');
+      const method = form.elements.method, hint = s.querySelector('[data-hint]'), opts = s.querySelector('.box-opts');
+      const sync = () => {
+        opts.hidden = method.value !== 'boxes';
+        hint.textContent = t('sh_' + method.value);
+      };
+      method.addEventListener('change', sync);
+      sync();
+      // start from an exercise in the library: takes its name and the way it is counted
+      s.querySelector('[data-from-lib]').addEventListener('click', () => {
+        exercisePicker((id) => {
+          const ex = getEx(id);
+          form.elements.title.value = exName(ex);
+          method.value = methodOf(ex);
+          sync();
+        }, t('from_library'));
+      });
+      form.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(form);
+        const title = String(fd.get('title')).trim();
+        const m = String(fd.get('method'));
+        const err = (k) => { s.querySelector('[data-err]').textContent = t(k); };
+        if (!title) return err('section_need_title');
+        const obj = { id: existing ? existing.id : 'c_' + uid(), name: title, muscle: 'section', equip: 'other', section: true, createdAt: existing?.createdAt || Date.now() };
+        if (m === 'check') obj.type = 'check';
+        else if (m === 'minutes') Object.assign(obj, { type: 'cardio', dist: null, extra: null });
+        else if (m === 'minkm') Object.assign(obj, { type: 'cardio', dist: 'km', extra: null });
+        else if (m === 'weightreps') obj.type = 'weight';
+        else if (m === 'reps') obj.type = 'bodyweight';
+        else if (m === 'seconds') obj.type = 'time';
+        else {
+          const fields = BOXES.filter(([k]) => fd.get('box_' + k) === 'on').map(([k]) => ({ k }));
+          ['a', 'b'].forEach((k) => { const l = String(fd.get('label_' + k) || '').trim(); if (l) fields.push({ k, label: l }); });
+          if (!fields.length) return err('section_need_box');
+          if (fields.length > 4) return err('section_too_many');
+          Object.assign(obj, { type: 'custom', fields });
+        }
+        const i = S.exercises.findIndex((x) => x.id === obj.id);
+        if (i >= 0) S.exercises[i] = obj; else S.exercises.push(obj);
+        persist('exercises', obj);
+        close();
+        toast(t('section_saved'), 'success');
+        onSaved && onSaved(obj.id);
+      });
+    },
+  });
+}
+
 function exerciseForm(existing, presetName = '', onSaved) {
   const e = existing || { name: presetName, muscle: 'chest', equip: 'barbell', type: 'weight' };
   const EQUIP = ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell', 'band', 'other'];
@@ -1706,6 +1832,7 @@ function exerciseForm(existing, presetName = '', onSaved) {
 // Demo images (start / end position, flipped back and forth), written steps and a video link
 function demoHtml(id) {
   const e = getEx(id), m = MEDIA[id];
+  if (e.section) return '';
   const q = encodeURIComponent(`${e.en || exName(e)} exercise form`);
   const video = `<a class="btn btn-ghost btn-sm" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener noreferrer">${icon('video')}${t('demo_video')}</a>`;
   // written steps: Arabic (written for this app) when the app is in Arabic, otherwise the English steps that come with the photos
@@ -1761,7 +1888,7 @@ function exerciseSheet(id) {
     </div>`, {
     onClose: () => stopDemo(),
     onMount: (s, close) => { stopDemo = mountDemo(s); s.addEventListener('click', async (ev) => {
-      if (ev.target.closest('[data-edit]')) { close(); exerciseForm(S.exercises.find((x) => x.id === id)); }
+      if (ev.target.closest('[data-edit]')) { close(); const rec = S.exercises.find((x) => x.id === id); if (rec && rec.section) sectionSheet(rec, () => render()); else exerciseForm(rec); }
       if (ev.target.closest('[data-add-active]')) { close(); addToActive(id); go('log'); }
       if (ev.target.closest('[data-del]')) {
         close();
@@ -1817,8 +1944,8 @@ function otherDaySheet() {
 function addToActive(exId) {
   if (!S.active) return;
   const prev = lastSetsFor(exId, S.active.editingId);
-  const n = exType(exId) === 'cardio' ? 1 : prev ? Math.min(prev.length, 6) : 3;
-  S.active.exercises.push({ exId, target: '', rest: null, note: '', sets: Array.from({ length: n }, () => ({ w: '', r: '', x: '', done: false })) });
+  const n = noSets(exId) ? 1 : prev ? Math.min(prev.length, 6) : 3;
+  S.active.exercises.push({ exId, target: '', rest: null, note: '', sets: Array.from({ length: n }, () => blankSet(exId)) });
   saveActive(true);
 }
 
@@ -1873,7 +2000,7 @@ function exportCSV() {
       type === 'cardio' ? (s.r ?? '') : '',
       type === 'cardio' ? (c.dist ? (s.w ?? '') : '') : type === 'carry' ? (s.r ?? '') : '',
       type === 'cardio' ? (c.dist || '') : type === 'carry' ? 'm' : '',
-      type === 'cardio' && c.extra ? `${c.extra}=${s.x ?? ''}` : '',
+      type === 'cardio' && c.extra ? `${c.extra}=${s.x ?? ''}` : isSection(type) ? Object.entries(s).filter(([k]) => k !== 'ok').map(([k, v]) => `${k}=${v}`).join('; ') : '',
       Math.round((w.duration || 0) / 60),
     ]);
   })));
@@ -1953,6 +2080,8 @@ A['day-del'] = async (el) => {
   p.days.splice(d, 1); savePlan(p); render();
 };
 A['day-move'] = (el) => { const p = plan(), d = +el.dataset.d, n = d + +el.dataset.dir; [p.days[d], p.days[n]] = [p.days[n], p.days[d]]; savePlan(p); render(); };
+A['section-add'] = (el) => { const p = plan(), d = +el.dataset.d; sectionSheet(null, (exId) => { p.days[d].items.push({ exId, ...itemDefaults(exId), rest: null }); savePlan(p); render(); }); };
+A['section-log'] = () => sectionSheet(null, (exId) => { addToActive(exId); render(); setTimeout(() => document.querySelector('.exblock:last-of-type')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50); });
 A['item-add'] = (el) => { const p = plan(), d = +el.dataset.d; exercisePicker((exId) => { p.days[d].items.push({ exId, ...itemDefaults(exId), rest: null }); savePlan(p); render(); }); };
 A['item-menu'] = (el) => {
   const p = plan(), d = +el.dataset.d, i = +el.dataset.i, items = p.days[d].items;
@@ -2001,18 +2130,24 @@ A['set-done'] = (el) => {
     // fill blanks from placeholders
     const row = el.closest('.setrow');
     row.querySelectorAll('[data-f]').forEach((inp) => { if (!inp.value && inp.placeholder) { inp.value = inp.placeholder; s[inp.dataset.f] = inp.placeholder; } });
-    if (num(s.r) == null && !(type === 'cardio' && num(s.w) != null)) { toast(t(type === 'cardio' ? 'enter_cardio' : 'enter_reps'), 'error'); row.querySelector('[data-f="r"]')?.focus(); return; }
-    if ((type === 'weight' || type === 'carry') && num(s.w) == null) s.w = '0';
+    if (type === 'custom') {
+      if (!sectionFields(e.exId).some((b) => num(s[b.k]) != null)) { toast(t('enter_any'), 'error'); row.querySelector('[data-f]')?.focus(); return; }
+    } else if (type !== 'check') {
+      if (num(s.r) == null && !(type === 'cardio' && num(s.w) != null)) { toast(t(type === 'cardio' ? 'enter_cardio' : 'enter_reps'), 'error'); row.querySelector('[data-f="r"]')?.focus(); return; }
+      if ((type === 'weight' || type === 'carry') && num(s.w) == null) s.w = '0';
+    }
     s.done = true;
-    // cardio has no rest between "sets"
-    if (s.kind !== 'warm' && type !== 'cardio') startRest(e.rest || S.profile.rest || 90);
+    // cardio and sections have no rest between "sets"
+    if (s.kind !== 'warm' && !noSets(e.exId)) startRest(e.rest || S.profile.rest || 90);
   } else s.done = false;
   saveActive(true); render();
 };
 A['set-add'] = (el) => {
   const e = act().exercises[+el.dataset.i];
   const last = e.sets[e.sets.length - 1];
-  e.sets.push({ w: last ? last.w : '', r: last ? last.r : '', x: last ? last.x : '', done: false });
+  const next = { w: last ? last.w : '', r: last ? last.r : '', x: last ? last.x : '', done: false };
+  if (exType(e.exId) === 'custom') sectionFields(e.exId).forEach((b) => (next[b.k] = last && last[b.k] != null ? last[b.k] : ''));
+  e.sets.push(next);
   saveActive(true); render();
 };
 A['set-remove'] = (el) => { const e = act().exercises[+el.dataset.i]; if (e.sets.length > 1) e.sets.pop(); saveActive(true); render(); };
@@ -2023,11 +2158,12 @@ A['ex-menu'] = (el) => {
   const i = +el.dataset.i, list = act().exercises, e = list[i];
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(e.exId))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
-      ${exType(e.exId) === 'cardio' ? '' : `<label class="field"><span>${t('rest_s')}</span><div class="chips-wrap">${[45, 60, 90, 120, 180, 240].map((s) => `<button class="chip ${(e.rest || S.profile.rest || 90) === s ? 'chip-solid' : ''}" data-rest="${s}">${s}</button>`).join('')}</div></label>`}
+      ${noSets(e.exId) ? '' : `<label class="field"><span>${t('rest_s')}</span><div class="chips-wrap">${[45, 60, 90, 120, 180, 240].map((s) => `<button class="chip ${(e.rest || S.profile.rest || 90) === s ? 'chip-solid' : ''}" data-rest="${s}">${s}</button>`).join('')}</div></label>`}
       <div class="menu-list">
         <button data-m="up" ${i === 0 ? 'disabled' : ''}>${icon('up')}${t('move_up')}</button>
         <button data-m="down" ${i === list.length - 1 ? 'disabled' : ''}>${icon('down')}${t('move_down')}</button>
         <button data-m="swap">${icon('repeat')}${t('replace_ex')}</button>
+        ${isSection(exType(e.exId)) ? `<button data-m="edit-section">${icon('edit')}${t('section_edit')}</button>` : ''}
         <button data-m="info">${icon('chart')}${t('ex_details')}</button>
         <button data-m="del" class="danger">${icon('trash')}${t('remove_ex')}</button>
       </div></div>`, {
@@ -2040,6 +2176,7 @@ A['ex-menu'] = (el) => {
       if (m === 'up' || m === 'down') { const n = i + (m === 'up' ? -1 : 1); [list[i], list[n]] = [list[n], list[i]]; }
       if (m === 'del') list.splice(i, 1);
       if (m === 'swap') return exercisePicker((exId) => { e.exId = exId; saveActive(true); render(); }, t('replace_ex'));
+      if (m === 'edit-section') return sectionSheet(getEx(e.exId), () => { saveActive(true); render(); });
       if (m === 'info') return exerciseSheet(e.exId);
       saveActive(true); render();
     }),
