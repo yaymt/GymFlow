@@ -894,3 +894,10 @@ button.check-label.muted { color: var(--muted); }
 .adv summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 .adv { display: grid; gap: 8px; }
 .box-row .box-unit:disabled { opacity: .6; }
+
+/* ---------- Rows with their own boxes (v1.11) ---------- */
+.row-card { display: grid; gap: 8px; padding: 12px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line); }
+.row-card-head { display: flex; align-items: center; gap: 8px; }
+.row-card-head .input { flex: 1; min-width: 0; min-height: 40px; }
+.row-card .box-row .input { background: var(--surface); }
+.exblock .setrow.head.nopre { margin-top: 6px; }

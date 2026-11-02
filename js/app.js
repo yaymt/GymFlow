@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.10.0';
+const VERSION = '1.11.0';
 
 /* =========================================================
    State
@@ -107,18 +107,28 @@ const partsOf = (g) => (g.startsWith('cat:') ? ((secById(g.slice(4)) || {}).part
 // Custom sections: a box you design yourself. "check" = just a tick and a note; "custom" = the boxes you pick.
 const BOXES = [['w', 'box_kg'], ['reps', 'box_reps'], ['min', 'box_min'], ['sec', 'box_sec'], ['km', 'box_km'], ['m', 'box_m'], ['kcal', 'box_kcal']];
 const isSection = (type) => type === 'check' || type === 'custom';
-const sectionFields = (exId) => getEx(exId).fields || [];
+// A section is a list of rows; each row has a title and its own boxes. Sections made before rows had their own boxes
+// have one list of boxes (and optional row titles) shared by all rows, which is read here as the same list on every row.
+const sectionRows = (exId) => {
+  const rec = getEx(exId);
+  if (rec.rows && rec.rows.length) return rec.rows;
+  const n = Math.max(1, (rec.rowTitles || []).length);
+  return Array.from({ length: n }, (_, i) => ({ title: (rec.rowTitles || [])[i] || '', fields: rec.fields || [] }));
+};
+const rowDef = (exId, j) => { const rows = sectionRows(exId); return rows[Math.min(Math.max(j || 0, 0), rows.length - 1)]; };
+const sectionFields = (exId) => rowDef(exId, 0).fields;
+const rowCount = (exId) => (isSection(exType(exId)) ? sectionRows(exId).length : 1);
 const boxName = (b) => b.label || t((BOXES.find(([k]) => k === b.k) || [])[1] || 'box_min');
 const boxUnit = (b) => (b.k === 'w' ? uLabel() : b.unit || '');
 const boxLabel = (b) => boxName(b) + (boxUnit(b) ? ` (${boxUnit(b)})` : '');
 // the kilogram box follows your unit setting (kg or lb), like the weight of a normal exercise
 const boxText = (b, v, aUnit) => (b.k === 'w' ? `${fmtNum(aUnit === 'lb' ? v * LB : v)} ${t('u_' + (aUnit || unit()))}` : `${fmtNum(v)} ${b.unit || boxName(b)}`);
-const hasLoadBox = (exId) => exType(exId) === 'custom' && sectionFields(exId).some((b) => b.k === 'w');
-const rowTitle = (exId, j) => String((getEx(exId).rowTitles || [])[j] || '').trim();
+const hasLoadBox = (exId) => exType(exId) === 'custom' && sectionRows(exId).some((r) => r.fields.some((b) => b.k === 'w'));
+const rowTitle = (exId, j) => String((sectionRows(exId)[j] || {}).title || '').trim();
 const noSets = (exId) => { const ty = exType(exId); return ty === 'cardio' || isSection(ty); };
-const blankSet = (exId) => {
+const blankSet = (exId, j = 0) => {
   const st = { w: '', r: '', x: '', done: false };
-  if (exType(exId) === 'custom') sectionFields(exId).forEach((b) => (st[b.k] = ''));
+  if (exType(exId) === 'custom') rowDef(exId, j).fields.forEach((b) => (st[b.k] = ''));
   return st;
 };
 const colsBase = (exId) => {
@@ -379,17 +389,8 @@ const route = () => {
 };
 const go = (path) => { if (location.hash === '#/' + path) render(); else location.hash = '#/' + path; };
 
-const NAV = [
-  ['home', 'home', 'nav_home'],
-  ['plans', 'plans', 'nav_plans'],
-  ['log', 'dumbbell', 'nav_train'],
-  ['history', 'calendar', 'nav_history'],
-  ['progress', 'chart', 'nav_progress'],
-];
 const MORE = [
-  ['body', 'scale', 'nav_body'],
   ['exercises', 'library', 'nav_exercises'],
-  ['tools', 'tools', 'nav_tools'],
   ['settings', 'settings', 'nav_settings'],
 ];
 
@@ -402,7 +403,15 @@ const isSuper = () => !!S.user && (isCloud ? ADMIN_UIDS.includes(S.user.uid) : d
 const can = (p) => isSuper() || !!S.perms[p];
 const hasControl = () => can('view') || can('stars');
 const starsTotal = () => Math.max(0, S.rewards.reduce((a, r) => a + (Number(r.stars) || 0), 0));
-const moreItems = () => [...(hasControl() ? [['control', 'star', 'nav_control']] : []), ...MORE];
+// the bottom bar: the last tab is Control for people who have it, otherwise Settings
+const navItems = () => [
+  ['home', 'home', 'nav_home'],
+  ['plans', 'plans', 'nav_plans'],
+  ['log', 'dumbbell', 'nav_train'],
+  ['history', 'calendar', 'nav_history'],
+  hasControl() ? ['control', 'star', 'nav_control'] : ['settings', 'settings', 'nav_settings'],
+];
+const moreItems = () => { const inBar = new Set(navItems().map((x) => x[0])); return MORE.filter((m) => !inBar.has(m[0])); };
 const navGroup = (r) => ({ workout: 'history', plan: 'plans', admin: 'control' }[r] || r);
 
 function shell() {
@@ -411,7 +420,7 @@ function shell() {
     <aside class="rail">
       <a class="brand" href="#/home">${brandMark()}<span>${t('app_name')}</span></a>
       <nav class="rail-nav">
-        ${[...NAV, ...moreItems()].map(([r, ic, k]) => `<a href="#/${r}" data-nav="${r}">${icon(ic)}<span>${t(k)}</span></a>`).join('')}
+        ${[...navItems(), ...moreItems()].map(([r, ic, k]) => `<a href="#/${r}" data-nav="${r}">${icon(ic)}<span>${t(k)}</span></a>`).join('')}
       </nav>
       <div class="rail-foot">
         <div class="who">${icon(isCloud ? 'cloud' : 'device')}<span>${esc(S.profile.name || S.user.email || t('athlete'))}</span></div>
@@ -422,7 +431,7 @@ function shell() {
       <main id="view" tabindex="-1"></main>
     </div>
     <nav class="tabbar" aria-label="${t('nav_main')}">
-      ${NAV.map(([r, ic, k]) => `<a href="#/${r}" data-nav="${r}" class="${r === 'log' ? 'tab-train' : ''}">${r === 'log' ? `<span class="train-dot">${icon(ic)}</span>` : icon(ic)}<span>${t(k)}</span></a>`).join('')}
+      ${navItems().map(([r, ic, k]) => `<a href="#/${r}" data-nav="${r}" class="${r === 'log' ? 'tab-train' : ''}">${r === 'log' ? `<span class="train-dot">${icon(ic)}</span>` : icon(ic)}<span>${t(k)}</span></a>`).join('')}
     </nav>
     <div id="restbar" class="restbar" aria-live="polite"></div>`;
 }
@@ -625,25 +634,16 @@ VIEWS.home = () => {
   </div>`;
 
   const prs = recentPRs(5);
-  const prHtml = card(`<div class="card-head"><h3>${t('recent_prs')}</h3><a class="muted small" href="#/progress">${t('see_all')}</a></div>
+  const prHtml = card(`<div class="card-head"><h3>${t('recent_prs')}</h3></div>
     ${prs.length ? `<ul class="pr-list">${prs.map((p) => `<li><a href="#/workout/${p.wid}">${icon('trophy')}<span>${esc(exName(p.exId))}<small>${t('pr_' + p.kind)}</small></span><b>${prValue(p)}</b></a></li>`).join('')}</ul>` : `<p class="muted">${t('no_prs')}</p>`}`);
 
   const last = sortedWorkouts()[0];
   const lastHtml = last ? card(`<div class="card-head"><h3>${t('last_workout')}</h3><span class="muted small">${fmtDate(last.start)}</span></div>
     ${workoutRow(last)}`) : '';
 
-  const bw = [...S.bodyweight].sort((a, b) => a.date.localeCompare(b.date));
-  const bwLast = bw[bw.length - 1];
-  const bwHtml = card(`<div class="card-head"><h3>${t('body_weight')}</h3><a class="muted small" href="#/body">${t('details')}</a></div>
-    <div class="bw-mini">
-      <div><b class="big">${bwLast ? fmtW(bwLast.kg) : '–'}</b>${bwLast ? `<small class="muted">${fmtDate(keyToDate(bwLast.date))}</small>` : ''}</div>
-      ${sparkline(bw.slice(-14).map((x) => x.kg))}
-      <button class="btn btn-ghost btn-sm" data-act="bw-quick">${icon('plus')}${t('log_weight')}</button>
-    </div>`);
-
   return {
     title: t('nav_home'),
-    html: `<div class="page home">${hero}${starsCard()}${nameBanner()}${resume}<div class="grid-2">${todayHtml}${bwHtml}</div>${stats}<div class="grid-2">${prHtml}${lastHtml}</div></div>`,
+    html: `<div class="page home">${hero}${starsCard()}${nameBanner()}${resume}${todayHtml}${stats}<div class="grid-2">${prHtml}${lastHtml}</div></div>`,
   };
 };
 
@@ -742,11 +742,11 @@ const ltr = (s) => `<bdi dir="ltr">${s}</bdi>`;
 // Average speed (km/h) for a cardio set measured in km
 const cardioSpeed = (s, exId) => (cardioDef(exId).dist === 'km' && s && s.r > 0 && s.w > 0 ? s.w / (s.r / 60) : null);
 
-function prevText(type, s, aUnit, exId) {
+function prevText(type, s, aUnit, exId, j) {
   if (!s) return '–';
   if (type === 'check') return '✓';
   if (type === 'custom') {
-    const parts = sectionFields(exId).filter((b) => s[b.k] != null && s[b.k] !== '').map((b) => boxText(b, s[b.k], aUnit));
+    const parts = rowDef(exId, s.row ?? j ?? 0).fields.filter((b) => s[b.k] != null && s[b.k] !== '').map((b) => boxText(b, s[b.k], aUnit));
     return parts.join(' · ') || '✓';
   }
   const w = isLoad(type) ? (aUnit === 'lb' ? s.w * LB : s.w) : s.w;
@@ -774,7 +774,9 @@ VIEWS.log = () => {
     const nopre = cardio || section;
     const cols = colsFor(e.exId);
     const prev = lastSetsFor(e.exId, A.editingId, before) || [];
+    const sigState = { sig: null };
     const rows = e.sets.map((s, j) => {
+      if (section) return sectionRowHtml(e, i, s, j, prev, A, sigState);
       const p = prev[j] || prev[prev.length - 1];
       const ph = (f) => { if (!p) return ''; const v = p[f]; if (v == null) return ''; return f === 'w' && (isLoad(type) || hasLoadBox(e.exId)) ? fmtNum(A.unit === 'lb' ? v * LB : v) : fmtNum(v); };
       // only weight exercises have warm-up sets; other types just number their rows
@@ -795,7 +797,7 @@ VIEWS.log = () => {
     const unitSfx = type === 'cardio' ? t('min_short') : type === 'time' ? t('sec_short') : type === 'carry' ? t('m_short') : '';
     const restInfo = nopre ? '' : ` · ${icon('timer')}${e.rest || S.profile.rest || 90}${t('sec_short')}`;
     const lastLine = nopre && prev.length && type !== 'check'
-      ? `<p class="prev-line muted small">${t('last_time')}: ${prev.map((x) => prevText(type, x, A.unit, e.exId)).join(' + ')}${cardio && cardioSpeed(prev[0], e.exId) ? ` · ${fmtNum(cardioSpeed(prev[0], e.exId))} ${t('kmh')}` : ''}</p>` : '';
+      ? `<p class="prev-line muted small">${t('last_time')}: ${prev.map((x, k) => prevText(type, x, A.unit, e.exId, k)).join(' + ')}${cardio && cardioSpeed(prev[0], e.exId) ? ` · ${fmtNum(cardioSpeed(prev[0], e.exId))} ${t('kmh')}` : ''}</p>` : '';
     return `<section class="exblock" data-i="${i}">
       <div class="exhead">
         <button class="exname" data-act="ex-menu" data-i="${i}"><b>${esc(exName(ex))}</b><small>${muscleName(ex)}${e.target ? ` · ${t('target')} ${esc(e.target)}${unitSfx}` : ''}${restInfo}</small></button>
@@ -803,7 +805,7 @@ VIEWS.log = () => {
         <button class="icon-btn sm" data-act="ex-menu" data-i="${i}" aria-label="${t('more')}">${icon('more')}</button>
       </div>
       ${lastLine}
-      ${cols.length || !section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span>#</span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
+      ${!section ? `<div class="setrow head cols-${cols.length} ${nopre ? 'nopre' : ''}" style="--n:${cols.length}"><span>#</span>${nopre ? '' : `<span>${t('previous')}</span>`}${cols.map((c) => `<span>${esc(c.l)}</span>`).join('')}<span>${icon('check')}</span></div>` : ''}
       ${rows}
       <div class="exfoot">
         <button class="btn btn-ghost btn-sm" data-act="set-add" data-i="${i}">${icon('plus')}${section ? t('add_row') : cardio ? t('add_interval') : t('add_set')}</button>
@@ -882,13 +884,13 @@ function startWorkout({ planId, dayId, fromWorkout, title } = {}) {
       const d = p && p.days.find((x) => x.id === dayId);
       if (d) {
         A.title = d.name;
-        A.exercises = d.items.map((it) => ({ exId: it.exId, target: it.reps, rest: num(it.rest) || null, note: '', sets: Array.from({ length: noSets(it.exId) ? 1 : Math.max(1, num(it.sets) || 3) }, () => blankSet(it.exId)) }));
+        A.exercises = d.items.map((it) => ({ exId: it.exId, target: it.reps, rest: num(it.rest) || null, note: '', sets: Array.from({ length: noSets(it.exId) ? rowCount(it.exId) : Math.max(1, num(it.sets) || 3) }, (_, j) => blankSet(it.exId, j)) }));
       }
     } else if (fromWorkout) {
       const w = S.workouts.find((x) => x.id === fromWorkout);
       if (w) {
         A.title = w.title || '';
-        A.exercises = w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: '', sets: e.sets.map((s) => ({ ...blankSet(e.exId), kind: s.kind })) }));
+        A.exercises = w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: '', sets: Array.from({ length: isSection(exType(e.exId)) ? rowCount(e.exId) : e.sets.length }, (_, j) => ({ ...blankSet(e.exId, j), kind: e.sets[j] && e.sets[j].kind })) }));
       }
     }
     if (!A.title) A.title = t('workout') + ' ' + fmtDate(Date.now(), { day: 'numeric', month: 'short' });
@@ -909,11 +911,17 @@ function editWorkout(id) {
     const conv = (v, type) => (v == null ? '' : isLoad(type) ? String(r1(u === 'lb' ? v * LB : v)) : String(v));
     S.active = {
       id: w.id, editingId: w.id, start: w.start, end: w.end, unit: u, title: w.title || '', planId: w.planId || null, dayId: w.dayId || null, notes: w.notes || '',
-      exercises: w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets: e.sets.map((s) => {
-        const o = { w: conv(s.w, exType(e.exId)), r: s.r == null ? '' : String(s.r), x: s.x == null ? '' : String(s.x), done: true, kind: s.kind };
-        if (exType(e.exId) === 'custom') sectionFields(e.exId).forEach((b) => (o[b.k] = s[b.k] == null ? '' : b.k === 'w' ? String(r1(u === 'lb' ? s[b.k] * LB : s[b.k])) : String(s[b.k])));
-        return o;
-      }) })),
+      exercises: w.exercises.map((e) => ({ exId: e.exId, target: e.target || '', rest: e.rest || null, note: e.note || '', sets: isSection(exType(e.exId))
+        // a section gets all its rows back; the rows you saved are filled in and ticked
+        ? Array.from({ length: Math.max(rowCount(e.exId), ...e.sets.map((s, k) => (s.row ?? k) + 1)) }, (_, r) => {
+          const o = blankSet(e.exId, r);
+          const s = e.sets.find((x, k) => (x.row ?? k) === r);
+          if (!s) return o;
+          rowDef(e.exId, r).fields.forEach((b) => (o[b.k] = s[b.k] == null ? '' : b.k === 'w' ? String(r1(u === 'lb' ? s[b.k] * LB : s[b.k])) : String(s[b.k])));
+          o.done = true;
+          return o;
+        })
+        : e.sets.map((s) => ({ w: conv(s.w, exType(e.exId)), r: s.r == null ? '' : String(s.r), x: s.x == null ? '' : String(s.x), done: true, kind: s.kind })) })),
     };
     saveActive(true); go('log');
   };
@@ -929,11 +937,13 @@ async function finishWorkout() {
     const type = exType(e.exId);
     if (isSection(type)) {
       // a section keeps the rows you ticked or filled in; only the boxes it has are saved
-      const keys = sectionFields(e.exId).map((b) => b.k);
-      const kept = e.sets.filter((s) => s.done || keys.some((k) => num(s[k]) != null)).map((s) => {
-        const out = { ok: 1 };
+      const kept = [];
+      e.sets.forEach((s, j) => {
+        const keys = rowDef(e.exId, j).fields.map((b) => b.k);
+        if (!(s.done || keys.some((k) => num(s[k]) != null))) return;
+        const out = { ok: 1, row: j };
         keys.forEach((k) => { const v = num(s[k]); if (v != null) out[k] = k === 'w' ? fromDisp(v, A.unit) : v; });
-        return out;
+        kept.push(out);
       });
       return { exId: e.exId, target: e.target || '', rest: null, note: e.note || '', sets: kept };
     }
@@ -1067,8 +1077,8 @@ VIEWS.workout = (r) => {
     const type = exType(e.exId);
     const exTotal = isLoad(type) ? setsTotal(e.sets) : 0;
     return `<section class="card ex-detail">
-      <div class="card-head"><h3><a href="#/progress/${encodeURIComponent(e.exId)}">${esc(exName(e.exId))}</a></h3>${prMap[e.exId] ? `<span class="badge-pr">${icon('trophy')}${t('pr_' + prMap[e.exId].kind)}</span>` : ''}</div>
-      <ol class="set-list">${e.sets.map((s, j) => `<li class="${s.kind === 'warm' ? 'warm' : ''}"><span>${s.kind === 'warm' && type === 'weight' ? 'W' : j + 1}</span><b>${prevText(type, s, unit(), e.exId)}</b>${type === 'cardio' && cardioSpeed(s, e.exId) ? `<small>${fmtNum(cardioSpeed(s, e.exId))} ${t('kmh')}</small>` : ''}</li>`).join('')}</ol>
+      <div class="card-head"><h3>${esc(exName(e.exId))}</h3>${prMap[e.exId] ? `<span class="badge-pr">${icon('trophy')}${t('pr_' + prMap[e.exId].kind)}</span>` : ''}</div>
+      <ol class="set-list">${e.sets.map((s, j) => `<li class="${s.kind === 'warm' ? 'warm' : ''}"><span>${s.kind === 'warm' && type === 'weight' ? 'W' : j + 1}</span><b>${prevText(type, s, unit(), e.exId, j)}</b>${type === 'cardio' && cardioSpeed(s, e.exId) ? `<small>${fmtNum(cardioSpeed(s, e.exId))} ${t('kmh')}</small>` : ''}</li>`).join('')}</ol>
       ${exTotal ? `<p class="muted small">${t('total_lifted')}: <b>${fmtTotal(exTotal)}</b></p>` : ''}
       ${e.note ? `<p class="note">${icon('note')}${esc(e.note)}</p>` : ''}
     </section>`;
@@ -1092,128 +1102,6 @@ VIEWS.workout = (r) => {
         </div>
       </section>
       ${exHtml}
-    </div>`,
-  };
-};
-
-/* ---------- PROGRESS ---------- */
-VIEWS.progress = (r) => {
-  const counts = {};
-  S.workouts.forEach((w) => w.exercises.forEach((e) => (counts[e.exId] = (counts[e.exId] || 0) + 1)));
-  const exIds = Object.keys(counts).filter((id) => !isSection(exType(id))).sort((a, b) => counts[b] - counts[a]);
-  if (!S.workouts.length) {
-    return { title: t('nav_progress'), html: `<div class="page">${empty('chart', t('no_data'), t('no_data_body'), `<button class="btn btn-primary" data-act="go-train">${t('start_workout')}</button>`)}</div>` };
-  }
-  const sel = r.a && counts[r.a] ? r.a : exIds.find((id) => exType(id) === 'weight') || exIds[0];
-  const type = exType(sel);
-  const metric = S.ui.progMetric;
-
-  // per-session series for selected exercise
-  const sessions = [...S.workouts].sort((a, b) => a.start - b.start).map((w) => {
-    const e = w.exercises.find((x) => x.exId === sel);
-    if (!e) return null;
-    const work = e.sets.filter((s) => s.kind !== 'warm');
-    const sets = work.length ? work : e.sets;
-    return {
-      x: w.start, wid: w.id,
-      weight: Math.max(0, ...sets.map((s) => s.w || 0)),
-      total: setsTotal(e.sets),
-      reps: Math.max(0, ...sets.map((s) => s.r || 0)),
-      dist: Math.max(0, ...sets.map((s) => s.w || 0)),
-      speed: Math.max(0, ...sets.map((s) => cardioSpeed(s, sel) || 0)),
-      sets: e.sets,
-    };
-  }).filter(Boolean);
-
-  const addedLoad = sessions.some((x) => x.weight > 0);
-  const cdef = type === 'cardio' ? cardioDef(sel) : null;
-  const metrics = type === 'weight' ? ['weight', 'total', 'reps'] : type === 'cardio' ? [...(cdef.dist ? ['dist'] : []), 'reps', ...(cdef.dist === 'km' ? ['speed'] : [])] : type === 'carry' ? ['weight', 'reps'] : type === 'bodyweight' && addedLoad ? ['reps', 'weight'] : ['reps'];
-  const m = metrics.includes(metric) ? metric : metrics[0];
-  const loadMetric = ['weight', 'total'].includes(m);
-  const pts = sessions.map((s) => ({ x: s.x, y: loadMetric ? toDisp(s[m]) : s[m] }));
-  const mLabel = (k) => t(type === 'time' && k === 'reps' ? 'met_secs' : type === 'cardio' && k === 'reps' ? 'met_mins' : type === 'carry' && k === 'reps' ? 'met_meters' : 'met_' + k);
-  const b = bestsFor(sel);
-
-  const weeks = weekCounts(12);
-  const since = Date.now() - 30 * 86400000;
-  const muscleSets = {};
-  S.workouts.filter((w) => w.start >= since).forEach((w) => w.exercises.forEach((e) => {
-    const mu = getEx(e.exId).muscle; if (mu === 'section') return; muscleSets[mu] = (muscleSets[mu] || 0) + e.sets.filter((s) => s.kind !== 'warm').length;
-  }));
-  const muscleItems = Object.entries(muscleSets).sort((a, b2) => b2[1] - a[1]).map(([k, v]) => ({ label: t('m_' + k), value: v }));
-
-  return {
-    title: t('nav_progress'),
-    html: `<div class="page">
-      <section class="card">
-        <div class="card-head"><h3>${t('exercise_progress')}</h3></div>
-        <select class="input" data-act-change="prog-ex" aria-label="${t('exercise')}">${exIds.map((id) => `<option value="${esc(id)}" ${id === sel ? 'selected' : ''}>${esc(exName(id))} (${counts[id]})</option>`).join('')}</select>
-        <div class="seg seg-sm">${metrics.map((k) => `<button class="${k === m ? 'on' : ''}" data-act="prog-metric" data-m="${k}">${mLabel(k)}</button>`).join('')}</div>
-        <div class="chart-wrap">${pts.length ? chartSlot(lineChart, pts, { fmtX: (x) => fmtDate(x, { day: 'numeric', month: 'short' }), fmtY: (y) => fmtNum(y) }) : ''}</div>
-        ${type === 'weight' ? `<div class="pr-grid">
-          <div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>
-          <div><small>${t('most_reps')}</small><b>${b.reps}</b></div>
-          <div><small>${t('best_total')}</small><b>${fmtTotal(b.total)}</b></div>
-          <div><small>${t('sessions')}</small><b>${b.sessions}</b></div>
-        </div>` : otherGrid(type, b, sel)}
-        <details class="sessions">
-          <summary>${t('session_log')} (${sessions.length})</summary>
-          <ul>${[...sessions].reverse().slice(0, 30).map((s) => `<li><a href="#/workout/${s.wid}"><span>${fmtDate(s.x)}</span><small>${s.sets.map((x) => prevText(type, x, unit(), sel)).join(' · ')}</small></a></li>`).join('')}</ul>
-        </details>
-      </section>
-      <div class="grid-2">
-        <section class="card"><div class="card-head"><h3>${t('weekly_total')}</h3><span class="muted small">${uLabel()}</span></div>
-          <div class="chart-wrap">${chartSlot(barChart, weeks.map((w) => ({ label: fmtDate(w.start, { day: 'numeric', month: 'numeric' }), value: Math.round(toDisp(w.total)) })), { height: 180 })}</div></section>
-        <section class="card"><div class="card-head"><h3>${t('weekly_sessions')}</h3><span class="muted small">${t('goal')}: ${S.profile.weeklyGoal || 4}</span></div>
-          <div class="chart-wrap">${chartSlot(barChart, weeks.map((w) => ({ label: fmtDate(w.start, { day: 'numeric', month: 'numeric' }), value: w.count, color: w.count >= (S.profile.weeklyGoal || 4) ? 'var(--plate-green)' : 'var(--accent)' })), { height: 180 })}</div></section>
-      </div>
-      <section class="card"><div class="card-head"><h3>${t('muscle_sets')}</h3><span class="muted small">${t('last_30')}</span></div>
-        ${muscleItems.length ? hBars(muscleItems) : `<p class="muted">${t('no_recent')}</p>`}</section>
-    </div>`,
-  };
-};
-
-/* ---------- BODY ---------- */
-VIEWS.body = () => {
-  const bw = [...S.bodyweight].sort((a, b) => a.date.localeCompare(b.date));
-  const last = bw[bw.length - 1];
-  const monthAgo = bw.filter((x) => keyToDate(x.date) <= new Date(Date.now() - 28 * 86400000)).pop();
-  const diff = last && monthAgo ? last.kg - monthAgo.kg : null;
-  const h = num(S.profile.height);
-  const bmi = last && h ? last.kg / Math.pow(h / 100, 2) : null;
-  const bmiK = bmi == null ? '' : bmi < 18.5 ? 'bmi_under' : bmi < 25 ? 'bmi_normal' : bmi < 30 ? 'bmi_over' : 'bmi_obese';
-
-  const ms = [...S.measurements].sort((a, b) => a.date.localeCompare(b.date));
-  const mLast = ms[ms.length - 1], mPrev = ms[ms.length - 2];
-
-  return {
-    title: t('nav_body'),
-    html: `<div class="page">
-      <section class="card">
-        <div class="card-head"><h3>${t('body_weight')}</h3></div>
-        <div class="bw-top">
-          <div><b class="big">${last ? fmtW(last.kg) : '–'}</b><small class="muted">${last ? fmtDate(keyToDate(last.date)) : t('no_entries')}</small></div>
-          ${diff != null ? `<div class="delta ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}"><b><bdi dir="ltr">${diff > 0 ? '+' : ''}${fmtNum(toDisp(diff))}</bdi> ${uLabel()}</b><small class="muted">${t('vs_4w')}</small></div>` : ''}
-          ${bmi ? `<div><b>${bmi.toFixed(1)}</b><small class="muted">BMI · ${t(bmiK)}</small></div>` : ''}
-        </div>
-        <form class="inline-form" data-form="bw">
-          <input class="input" name="v" inputmode="decimal" placeholder="${t('weight')} (${uLabel()})" required aria-label="${t('weight')}"/>
-          <input class="input" name="d" type="date" value="${dateKey()}" max="${dateKey()}" required aria-label="${t('date')}"/>
-          <button class="btn btn-primary">${t('add')}</button>
-        </form>
-        ${bw.length > 1 ? `<div class="chart-wrap">${chartSlot(lineChart, bw.map((x) => ({ x: keyToDate(x.date).getTime(), y: toDisp(x.kg) })), { fmtX: (x) => fmtDate(x, { day: 'numeric', month: 'short' }), color: 'var(--plate-blue)' })}</div>` : ''}
-        ${!h ? `<p class="muted small">${t('add_height_hint')} <a href="#/settings">${t('nav_settings')}</a></p>` : ''}
-        ${bw.length ? `<details class="sessions"><summary>${t('entries')} (${bw.length})</summary><ul>${[...bw].reverse().map((x) => `<li><span>${fmtDate(keyToDate(x.date))}</span><b>${fmtW(x.kg)}</b><button class="icon-btn sm danger" data-act="bw-del" data-id="${x.id}" aria-label="${t('delete')}">${icon('trash')}</button></li>`).join('')}</ul></details>` : ''}
-      </section>
-      <section class="card">
-        <div class="card-head"><h3>${t('measurements')}</h3><span class="muted small">${t('cm')}</span></div>
-        ${mLast ? `<div class="measure-grid">${MEASURE_KEYS.filter((k) => mLast.values[k] != null).map((k) => {
-          const d = mPrev && mPrev.values[k] != null ? mLast.values[k] - mPrev.values[k] : null;
-          return `<div><small>${t('ms_' + k)}</small><b>${fmtNum(mLast.values[k])}${k === 'bodyfat' ? '%' : ''}</b>${d ? `<em class="${d > 0 ? 'up' : 'down'}" dir="ltr">${d > 0 ? '+' : ''}${fmtNum(d)}</em>` : ''}</div>`;
-        }).join('')}</div><p class="muted small">${t('last_updated')}: ${fmtDate(keyToDate(mLast.date))}</p>` : `<p class="muted">${t('no_measure')}</p>`}
-        <button class="btn btn-ghost btn-sm" data-act="ms-add">${icon('ruler')}${t('add_measure')}</button>
-        ${ms.length ? `<details class="sessions"><summary>${t('entries')} (${ms.length})</summary><ul>${[...ms].reverse().map((x) => `<li><span>${fmtDate(keyToDate(x.date))}</span><small>${MEASURE_KEYS.filter((k) => x.values[k] != null).map((k) => `${t('ms_' + k)} ${fmtNum(x.values[k])}`).join(' · ')}</small><button class="icon-btn sm danger" data-act="ms-del" data-id="${x.id}" aria-label="${t('delete')}">${icon('trash')}</button></li>`).join('')}</ul></details>` : ''}
-      </section>
     </div>`,
   };
 };
@@ -1272,99 +1160,6 @@ VIEWS.exercises = () => {
   };
 };
 
-/* ---------- TOOLS ---------- */
-VIEWS.tools = () => {
-  const u = uLabel();
-  const isLb = unit() === 'lb';
-  const plates = isLb ? [45, 35, 25, 10, 5, 2.5] : [25, 20, 15, 10, 5, 2.5, 1.25];
-  const bars = isLb ? [45, 35, 15] : [20, 15, 10];
-  return {
-    title: t('nav_tools'),
-    html: `<div class="page tools">
-      <section class="card" id="tool-1rm">
-        <div class="card-head"><h3>${t('tool_1rm')}</h3></div>
-        <p class="muted small">${t('tool_1rm_sub')}</p>
-        <div class="inline-form">
-          <label class="field"><span>${t('weight')} (${u})</span><input class="input" inputmode="decimal" data-tool="orm-w" value="100"/></label>
-          <label class="field"><span>${t('reps')}</span><input class="input" inputmode="numeric" data-tool="orm-r" value="5"/></label>
-        </div>
-        <div class="tool-out" data-out="orm"></div>
-      </section>
-      <section class="card" id="tool-plates">
-        <div class="card-head"><h3>${t('tool_plates')}</h3></div>
-        <div class="inline-form">
-          <label class="field"><span>${t('target')} (${u})</span><input class="input" inputmode="decimal" data-tool="pl-t" value="${isLb ? 225 : 100}"/></label>
-          <label class="field"><span>${t('bar')}</span><select class="input" data-tool="pl-b">${bars.map((b2) => `<option value="${b2}">${b2} ${u}</option>`).join('')}</select></label>
-        </div>
-        <div class="chips-wrap">${plates.map((p) => `<label class="chip-check"><input type="checkbox" data-tool="pl-p" value="${p}" checked/><span>${p}</span></label>`).join('')}</div>
-        <div class="tool-out" data-out="pl"></div>
-      </section>
-      <section class="card" id="tool-warm">
-        <div class="card-head"><h3>${t('tool_warmup')}</h3></div>
-        <p class="muted small">${t('tool_warmup_sub')}</p>
-        <label class="field"><span>${t('working_weight')} (${u})</span><input class="input" inputmode="decimal" data-tool="wu-w" value="${isLb ? 225 : 100}"/></label>
-        <div class="tool-out" data-out="wu"></div>
-      </section>
-      <section class="card" id="tool-timer">
-        <div class="card-head"><h3>${t('tool_timer')}</h3></div>
-        <div class="chips-wrap">${[30, 45, 60, 90, 120, 180, 240].map((s) => `<button class="chip" data-act="rest-start" data-s="${s}">${s >= 60 ? (s / 60) + ' ' + t('min_short') : s + ' ' + t('sec_short')}</button>`).join('')}</div>
-      </section>
-      <section class="card" id="tool-conv">
-        <div class="card-head"><h3>${t('tool_convert')}</h3></div>
-        <div class="inline-form">
-          <label class="field"><span>${t('u_kg')}</span><input class="input" inputmode="decimal" data-tool="cv-kg" value="100"/></label>
-          <label class="field"><span>${t('u_lb')}</span><input class="input" inputmode="decimal" data-tool="cv-lb" value="${r1(100 * LB)}"/></label>
-        </div>
-      </section>
-    </div>`,
-    after: (v) => updateTools(v),
-  };
-};
-
-function updateTools(v, src) {
-  const val = (k) => num(v.querySelector(`[data-tool="${k}"]`)?.value);
-  const u = uLabel();
-  // 1RM
-  const w = val('orm-w'), r = val('orm-r');
-  const o = v.querySelector('[data-out="orm"]');
-  if (o) {
-    if (w && r && r <= 30) {
-      const ep = w * (1 + r / 30), br = r < 37 ? w * 36 / (37 - r) : ep;
-      const est = r === 1 ? w : (ep + br) / 2;
-      const rows = [100, 95, 90, 85, 80, 75, 70, 65, 60].map((p) => `<tr><td>${p}%</td><td><b>${fmtNum(Math.round(est * p / 100 * 2) / 2)}</b> ${u}</td><td class="muted">${ltr('≈' + { 100: 1, 95: 2, 90: 4, 85: 6, 80: 8, 75: 10, 70: 12, 65: 15, 60: 18 }[p])} ${t('reps_short')}</td></tr>`).join('');
-      o.innerHTML = `<p class="tool-big"><b>${fmtNum(est)}</b> ${u}<small class="muted">${t('est_1rm')}</small></p><table class="ptable">${rows}</table>`;
-    } else o.innerHTML = `<p class="muted">${t('enter_valid')}</p>`;
-  }
-  // plates
-  const pt = val('pl-t'), pb = val('pl-b');
-  const avail = [...v.querySelectorAll('[data-tool="pl-p"]:checked')].map((x) => num(x.value)).sort((a, b) => b - a);
-  const po = v.querySelector('[data-out="pl"]');
-  if (po) {
-    if (pt && pb != null && pt >= pb) {
-      let side = (pt - pb) / 2;
-      const list = [];
-      for (const p of avail) { const n = Math.floor((side + 1e-9) / p); if (n) { list.push({ w: p, n }); side -= n * p; } }
-      const loaded = pb + 2 * list.reduce((a, x) => a + x.w * x.n, 0);
-      po.innerHTML = `${list.length ? plateStack(list, unit()) : ''}
-        <p>${list.length ? t('per_side') + ': ' + list.map((x) => `<b>${ltr(`${x.n}×${x.w}`)}</b>`).join(' + ') : t('just_bar')}</p>
-        ${Math.abs(loaded - pt) > 0.01 ? `<p class="warn small">${t('closest', { w: fmtNum(loaded) + ' ' + u })}</p>` : ''}`;
-    } else po.innerHTML = `<p class="muted">${t('target_gt_bar')}</p>`;
-  }
-  // warm-up
-  const ww = val('wu-w');
-  const wo = v.querySelector('[data-out="wu"]');
-  if (wo) {
-    if (ww) {
-      const step = unit() === 'lb' ? 5 : 2.5, barW = unit() === 'lb' ? 45 : 20;
-      const rnd = (x) => Math.max(barW, Math.round(x / step) * step);
-      const scheme = [[0, 10], [0.4, 8], [0.6, 5], [0.75, 3], [0.85, 1]];
-      wo.innerHTML = `<ol class="warm-list">${scheme.map(([p, rp]) => `<li><b>${p ? fmtNum(rnd(ww * p)) : barW} ${u}</b><span>${ltr(`× ${rp}`)}</span><small class="muted">${p ? Math.round(p * 100) + '%' : t('empty_bar')}</small></li>`).join('')}<li class="work"><b>${fmtNum(ww)} ${u}</b><span>${t('working_sets')}</span></li></ol>`;
-    } else wo.innerHTML = '';
-  }
-  // converter
-  if (src === 'cv-kg') { const k = val('cv-kg'); v.querySelector('[data-tool="cv-lb"]').value = k == null ? '' : r1(k * LB); }
-  if (src === 'cv-lb') { const l = val('cv-lb'); v.querySelector('[data-tool="cv-kg"]').value = l == null ? '' : r1(l / LB); }
-}
 
 /* ---------- STARS: member side (shown on Home) ---------- */
 let rewardsAt = 0;
@@ -1563,7 +1358,7 @@ async function loadMember(uid) {
       ${showWork ? `<section class="card">
         <div class="card-head"><h3>${t('recent_workouts')}</h3></div>
         ${ws.length ? ws.slice(0, 15).map((w) => `<details class="adm-w"><summary><span><b>${esc(w.title || t('workout'))}</b><small class="muted">${fmtDate(w.start)} · ${fmtDurShort(w.duration || 0)}</small></span><span class="adm-total">${fmtTotal(workoutTotal(w))}</span></summary>
-          <ul class="set-list">${(w.exercises || []).map((e) => `<li><b>${esc(exName(e.exId))}</b><small>${(e.sets || []).map((s) => prevText(exType(e.exId), s, unit(), e.exId)).join(' · ')}</small></li>`).join('')}</ul></details>`).join('') : `<p class="muted">${t('no_workouts_user')}</p>`}
+          <ul class="set-list">${(w.exercises || []).map((e) => `<li><b>${esc(exName(e.exId))}</b><small>${(e.sets || []).map((s, k) => prevText(exType(e.exId), s, unit(), e.exId, k)).join(' · ')}</small></li>`).join('')}</ul></details>`).join('') : `<p class="muted">${t('no_workouts_user')}</p>`}
       </section>` : ''}`;
   } catch (e) {
     console.error(e);
@@ -1757,16 +1552,17 @@ function previewSheet(id, onChoose) {
 }
 
 /* ---------- CUSTOM SECTIONS: a box you design yourself ----------
-   Order: title, (optional) start from the library, the small boxes you want (kg, reps, minutes, km, your own...).
-   The tick and the note are always there. Rows can be renamed by tapping them in the workout. */
+   Order: title, (optional) start from the library, then the rows. Every row has its own title and its own small boxes
+   (kg, reps, minutes, km, your own...), so one row can be minutes and another something else.
+   The tick and the note are always there. */
 const userMethods = () => S.profile.methods || [];
 const catalogName = (k) => { const r = BOXES.find(([x]) => x === k); return r ? t(r[1]) : ''; };
-// boxes of a section as the editor shows them; old sections only stored a key, so fall back to the built-in name
+// boxes as the editor shows them; old sections only stored a key, so fall back to the built-in name
 const boxEntries = (fields) => (fields || []).map((b) => ({ k: b.k, label: b.label || (b.k === 'w' ? '' : catalogName(b.k)), unit: b.unit || '' }));
 // the boxes that match how a library exercise is counted
 const boxesFor = (ex) => {
   const mk = (k, unit = '') => ({ k, label: k === 'w' ? '' : catalogName(k), unit });
-  if (ex.type === 'custom') return boxEntries(ex.fields);
+  if (ex.type === 'custom') return boxEntries(sectionRows(ex.id)[0].fields);
   if (ex.type === 'weight' || ex.type === 'carry') return [mk('w'), mk(ex.type === 'carry' ? 'm' : 'reps')];
   if (ex.type === 'bodyweight') return [mk('reps')];
   if (ex.type === 'time') return [mk('sec')];
@@ -1774,31 +1570,52 @@ const boxesFor = (ex) => {
   return [];
 };
 
+// one row of a workout section: its own title, its own headings and boxes, and the tick
+function sectionRowHtml(e, i, s, j, prev, A, st) {
+  const fl = rowDef(e.exId, j).fields, title = rowTitle(e.exId, j);
+  const pp = prev.find((x, k) => (x.row ?? k) === j);
+  const ph = (f) => { const v = pp && pp[f]; if (v == null) return ''; return f === 'w' ? fmtNum(A.unit === 'lb' ? v * LB : v) : fmtNum(v); };
+  const sig = fl.map((b) => b.k + boxLabel(b)).join('|');
+  const head = fl.length && sig !== st.sig
+    ? `<div class="setrow head nopre cols-${fl.length}" style="--n:${fl.length}"><span>#</span>${fl.map((b) => `<span>${esc(boxLabel(b))}</span>`).join('')}<span>${icon('check')}</span></div>` : '';
+  st.sig = fl.length ? sig : null;
+  const cap = title && fl.length ? `<div class="row-cap">${esc(title)}</div>` : '';
+  const no = `<button type="button" class="setno" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${j + 1}</button>`;
+  const mid = fl.length
+    ? fl.map((b) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${b.k}" data-i="${i}" data-j="${j}" value="${esc(s[b.k] ?? '')}" placeholder="${esc(ph(b.k))}" aria-label="${esc(boxLabel(b))}"/>`).join('')
+    : `<button type="button" class="check-label ${title ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}">${esc(title || t('tick_when_done'))}</button>`;
+  return `${cap}${head}<div class="setrow ${s.done ? 'done' : ''} cols-${fl.length} nopre" style="--n:${fl.length}" data-i="${i}" data-j="${j}">${no}${mid}<button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button></div>`;
+}
+
+// after a section was edited in the middle of a workout: make sure it has a row for every row it now defines
+function syncSections() {
+  if (!S.active) return;
+  S.active.exercises.forEach((e) => {
+    if (!isSection(exType(e.exId))) return;
+    while (e.sets.length < rowCount(e.exId)) e.sets.push(blankSet(e.exId, e.sets.length));
+  });
+}
+
 function sectionSheet(existing, onSaved) {
   // sections made in earlier versions that count like a normal exercise keep that logic; only their headings can change
   const legacy = !!existing && !['check', 'custom'].includes(existing.type);
-  let boxes = existing && existing.type === 'custom' ? boxEntries(existing.fields) : [];
+  let rows = existing && !legacy ? sectionRows(existing.id).map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields) })) : [{ title: '', boxes: [] }];
   const labels = { ...((existing && existing.labels) || {}) };
-  const titles = [...((existing && existing.rowTitles) || [])];
   const saved = userMethods();
   openSheet(`<form class="sheet-body" data-sectionform>
       <div class="sheet-title"><h3>${existing ? t('section_edit') : t('add_section')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <label class="field"><span>1. ${t('section_title')}</span><input class="input" name="title" value="${esc(existing ? existing.name : '')}" maxlength="40" placeholder="${t('section_title_ph')}" required autofocus/></label>
       <button type="button" class="btn btn-ghost btn-sm" data-from-lib>${icon('library')}2. ${t('from_library')}</button>
       <div class="boxes-part">
-        <p class="part-title">3. ${t('boxes_title')}</p>
-        <p class="muted small">${t('always_check')}</p>
+        <p class="part-title">3. ${legacy ? t('rename_heads') : t('rows_title')}</p>
+        ${legacy ? '' : `<p class="muted small">${t('always_check')} ${t('rows_hint')}</p>`}
         <div class="editor" data-editor></div>
         ${!legacy && saved.length ? `<div class="chips-wrap quick-add"><span class="muted small">${t('my_templates')}</span>${saved.map((x) => `<button type="button" class="chip" data-tpl="${x.id}">${esc(x.name)}</button>`).join('')}</div>` : ''}
-        ${legacy ? '' : `<div class="save-method" data-save-method hidden>
+        ${legacy ? '' : `<div class="save-method">
           <label class="switch"><input type="checkbox" name="saveMethod"/><span class="switch-ui"></span><span>${t('save_method')}</span></label>
           <label class="field" data-method-name hidden><span>${t('method_name')}</span><input class="input" name="methodName" maxlength="24"/></label>
         </div>`}
       </div>
-      <details class="adv" ${titles.some(Boolean) ? 'open' : ''}><summary>${t('row_titles')}</summary>
-        <p class="muted small">${t('row_titles_hint')}</p>
-        <div class="inline-form cat-parts">${[0, 1, 2, 3].map((i) => `<label class="field"><span>${t('row_n')} ${i + 1}</span><input class="input" data-rt="${i}" value="${esc(titles[i] || '')}" maxlength="30" placeholder="${t('row_n')} ${i + 1}"/></label>`).join('')}</div>
-      </details>
       ${locationSelect(existing || { muscle: 'section' }, true)}
       <p class="form-err" data-err role="alert"></p>
       <div class="row-actions"><button type="button" class="btn btn-ghost" data-sheet-close>${t('cancel')}</button><button class="btn btn-primary">${t('save')}</button></div>
@@ -1811,44 +1628,60 @@ function sectionSheet(existing, onSaved) {
         err('');
         if (legacy) {
           const cols = colsFor(existing.id, true);
-          editor.innerHTML = `<p class="muted small">${t('rename_heads')}</p>` + cols.map((c) => `<label class="field"><span>${esc(c.l)}</span><input class="input" data-lab="${c.f}" value="${esc(labels[c.f] || '')}" placeholder="${esc(c.l)}" maxlength="16"/></label>`).join('');
+          editor.innerHTML = cols.map((c) => `<label class="field"><span>${esc(c.l)}</span><input class="input" data-lab="${c.f}" value="${esc(labels[c.f] || '')}" placeholder="${esc(c.l)}" maxlength="16"/></label>`).join('');
           return;
         }
-        const saveBox = s.querySelector('[data-save-method]');
-        if (saveBox) saveBox.hidden = !boxes.length;
-        editor.innerHTML = `${boxes.length ? '' : `<p class="muted small">${t('no_boxes')}</p>`}
-          <div class="box-list">${boxes.map((b, i) => `<div class="box-row">
-            <input class="input" data-bl="${i}" value="${esc(b.label)}" placeholder="${esc(b.k === 'w' ? catalogName('w') : t('box_name_ph'))}" maxlength="16" aria-label="${t('box_name_ph')}"/>
-            <input class="input box-unit" data-bu="${i}" value="${esc(b.k === 'w' ? uLabel() : b.unit)}" placeholder="${t('box_unit_ph')}" maxlength="8" ${b.k === 'w' ? 'disabled' : ''} aria-label="${t('box_unit_ph')}"/>
-            <button type="button" class="icon-btn sm danger" data-bdel="${i}" aria-label="${t('delete')}">${icon('x')}</button></div>`).join('')}</div>
-          <div class="chips-wrap quick-add"><button type="button" class="chip chip-add" data-badd>${icon('plus')}${t('add_box')}</button>
-            ${BOXES.map(([k, lk]) => `<button type="button" class="chip" data-bquick="${k}">${t(lk)}</button>`).join('')}</div>`;
+        editor.innerHTML = rows.map((r, ri) => `<div class="row-card">
+            <div class="row-card-head"><span class="badge">${t('row_n')} ${ri + 1}</span>
+              <input class="input" data-rtitle="${ri}" value="${esc(r.title)}" maxlength="30" placeholder="${t('row_title_ph')}" aria-label="${t('rename_row')}"/>
+              ${rows.length > 1 ? `<button type="button" class="icon-btn sm danger" data-rdel="${ri}" aria-label="${t('delete')}">${icon('trash')}</button>` : ''}</div>
+            ${r.boxes.length ? '' : `<p class="muted small">${t('no_boxes')}</p>`}
+            <div class="box-list">${r.boxes.map((b, bi) => `<div class="box-row">
+              <input class="input" data-bl="${ri}:${bi}" value="${esc(b.label)}" placeholder="${esc(b.k === 'w' ? catalogName('w') : t('box_name_ph'))}" maxlength="16" aria-label="${t('box_name_ph')}"/>
+              <input class="input box-unit" data-bu="${ri}:${bi}" value="${esc(b.k === 'w' ? uLabel() : b.unit)}" placeholder="${t('box_unit_ph')}" maxlength="8" ${b.k === 'w' ? 'disabled' : ''} aria-label="${t('box_unit_ph')}"/>
+              <button type="button" class="icon-btn sm danger" data-bdel="${ri}:${bi}" aria-label="${t('delete')}">${icon('x')}</button></div>`).join('')}</div>
+            <div class="chips-wrap quick-add"><button type="button" class="chip chip-add" data-badd="${ri}">${icon('plus')}${t('add_box')}</button>
+              ${BOXES.map(([k, lk]) => `<button type="button" class="chip" data-bquick="${ri}:${k}">${t(lk)}</button>`).join('')}</div>
+          </div>`).join('') + `<button type="button" class="btn btn-ghost btn-sm" data-radd>${icon('plus')}${t('add_row_def')}</button>`;
       };
-      const addBox = (key = '', label = '') => {
-        if (boxes.length >= 6) return err('section_too_many');
-        if (key && boxes.some((b) => b.k === key)) return err('box_dup');
-        boxes.push({ k: key, label, unit: '' }); draw();
-        editor.querySelector(`[data-bl="${boxes.length - 1}"]`)?.focus();
+      const addBox = (ri, key = '', label = '') => {
+        const r = rows[ri];
+        if (r.boxes.length >= 6) return err('section_too_many');
+        if (key && r.boxes.some((b) => b.k === key)) { if (!label) label = catalogName(key); key = ''; }
+        r.boxes.push({ k: key, label, unit: '' });
+        draw();
+        editor.querySelector(`[data-bl="${ri}:${r.boxes.length - 1}"]`)?.focus();
       };
       editor.addEventListener('input', (ev) => {
         const x = ev.target;
-        if (x.dataset.bl != null) boxes[+x.dataset.bl].label = x.value;
-        else if (x.dataset.bu != null) boxes[+x.dataset.bu].unit = x.value;
+        if (x.dataset.rtitle != null) rows[+x.dataset.rtitle].title = x.value;
+        else if (x.dataset.bl != null) { const [r, b] = x.dataset.bl.split(':'); rows[+r].boxes[+b].label = x.value; }
+        else if (x.dataset.bu != null) { const [r, b] = x.dataset.bu.split(':'); rows[+r].boxes[+b].unit = x.value; }
         else if (x.dataset.lab != null) labels[x.dataset.lab] = x.value.trim();
       });
       editor.addEventListener('click', (ev) => {
-        const del = ev.target.closest('[data-bdel]'), add = ev.target.closest('[data-badd]'), q = ev.target.closest('[data-bquick]');
-        if (del) { boxes.splice(+del.dataset.bdel, 1); draw(); }
-        else if (add) addBox();
-        else if (q) {
-          const k = q.dataset.bquick;
-          // keys of built-in boxes are used once; a second box of the same kind gets its own key
-          addBox(boxes.some((b) => b.k === k) ? '' : k, k === 'w' ? '' : catalogName(k));
+        const g = (a) => ev.target.closest(`[${a}]`);
+        if (g('data-bdel')) { const [r, b] = g('data-bdel').dataset.bdel.split(':'); rows[+r].boxes.splice(+b, 1); draw(); }
+        else if (g('data-badd')) addBox(+g('data-badd').dataset.badd);
+        else if (g('data-bquick')) {
+          const [r, k] = g('data-bquick').dataset.bquick.split(':');
+          addBox(+r, rows[+r].boxes.some((b) => b.k === k) ? '' : k, k === 'w' ? '' : catalogName(k));
+        } else if (g('data-rdel')) { rows.splice(+g('data-rdel').dataset.rdel, 1); draw(); }
+        else if (g('data-radd')) {
+          if (rows.length >= 10) return err('rows_too_many');
+          // a new row starts with the boxes of the last one, you change what is different
+          const last = rows[rows.length - 1];
+          rows.push({ title: '', boxes: last.boxes.map((b) => ({ ...b })) });
+          draw();
+          editor.querySelector(`[data-rtitle="${rows.length - 1}"]`)?.focus();
         }
       });
       s.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => {
         const sv = saved.find((x) => x.id === b.dataset.tpl);
-        if (sv) { boxes = boxEntries(sv.fields).map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })); draw(); }
+        if (!sv) return;
+        const src = sv.rows || [{ title: '', fields: sv.fields || [] }];
+        rows = src.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) }));
+        draw();
       }));
       const sm = form.elements.saveMethod;
       if (sm) sm.addEventListener('change', (ev) => { s.querySelector('[data-method-name]').hidden = !ev.target.checked; });
@@ -1857,7 +1690,7 @@ function sectionSheet(existing, onSaved) {
         exercisePicker((id) => {
           const ex = getEx(id);
           if (!form.elements.title.value.trim()) form.elements.title.value = exName(ex);
-          if (!legacy) { boxes = boxesFor(ex); draw(); }
+          if (!legacy) { rows = [{ title: '', boxes: boxesFor(ex) }]; draw(); }
         }, t('from_library'));
       });
       form.addEventListener('submit', (ev) => {
@@ -1867,28 +1700,27 @@ function sectionSheet(existing, onSaved) {
         if (!title) return err('section_need_title');
         const obj = { id: existing ? existing.id : 'c_' + uid(), name: title, muscle: 'section', equip: 'other', section: true, createdAt: existing?.createdAt || Date.now() };
         applyLocation(obj, String(fd.get('loc') || 'section'));
-        const rt = [...titles];
-        s.querySelectorAll('[data-rt]').forEach((inp) => { rt[+inp.dataset.rt] = inp.value.trim(); });
-        while (rt.length && !rt[rt.length - 1]) rt.pop();
-        if (rt.length) obj.rowTitles = rt;
         if (legacy) {
           Object.assign(obj, { type: existing.type, dist: existing.dist, extra: existing.extra });
           const cleaned = Object.fromEntries(Object.entries(labels).filter(([, v]) => v));
           if (Object.keys(cleaned).length) obj.labels = cleaned;
         } else {
-          const used = new Set(boxes.map((b) => b.k).filter(Boolean));
-          let n = 1;
-          const fresh = () => { while (used.has('f' + n)) n++; used.add('f' + n); return 'f' + n; };
-          const fields = boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim()).map((b, i) => ({
-            k: b.k || fresh(),
-            label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${i + 1}`),
-            ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}),
-          }));
-          // no boxes at all is fine: the section is then just the tick and the note
-          if (fields.length) Object.assign(obj, { type: 'custom', fields }); else obj.type = 'check';
-          if (fields.length && fd.get('saveMethod') === 'on') {
+          // every row has its own boxes; a row with no boxes is just the tick and the note
+          obj.type = 'custom';
+          obj.rows = rows.map((r) => {
+            const used = new Set(r.boxes.map((b) => b.k).filter(Boolean));
+            let n = 1;
+            const fresh = () => { while (used.has('f' + n)) n++; used.add('f' + n); return 'f' + n; };
+            const fields = r.boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim()).map((b, bi) => ({
+              k: b.k || fresh(),
+              label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${bi + 1}`),
+              ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}),
+            }));
+            return { title: r.title.trim(), fields };
+          });
+          if (fd.get('saveMethod') === 'on' && obj.rows.some((r) => r.fields.length)) {
             const nm = String(fd.get('methodName') || '').trim() || title;
-            S.profile.methods = [...userMethods(), { id: 'm_' + uid().slice(0, 8), name: nm, fields: fields.map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) }];
+            S.profile.methods = [...userMethods(), { id: 'm_' + uid().slice(0, 8), name: nm, rows: obj.rows.map((r) => ({ title: r.title, fields: r.fields.map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) })) }];
             saveProfile();
           }
         }
@@ -2076,7 +1908,6 @@ function exerciseSheet(id) {
         ${e.type === 'weight' || !e.type ? `<div><small>${t('heaviest')}</small><b>${fmtW(b.weight)}</b></div>` : otherCells(e.type, b, id)}
       </div>` : `<p class="muted">${t('never_done')}</p>`}
       <div class="row-actions start wrap">
-        ${b.sessions ? `<a class="btn btn-primary btn-sm" href="#/progress/${encodeURIComponent(id)}" data-sheet-close>${icon('chart')}${t('view_progress')}</a>` : ''}
         ${S.active ? `<button class="btn btn-ghost btn-sm" data-add-active>${icon('plus')}${t('add_to_workout')}</button>` : ''}
         ${custom ? `<button class="btn btn-ghost btn-sm" data-edit>${icon('edit')}${t('edit')}</button><button class="btn btn-ghost btn-sm danger" data-del>${icon('trash')}${t('delete')}</button>` : ''}
       </div>
@@ -2139,8 +1970,8 @@ function otherDaySheet() {
 function addToActive(exId) {
   if (!S.active) return;
   const prev = lastSetsFor(exId, S.active.editingId);
-  const n = noSets(exId) ? 1 : prev ? Math.min(prev.length, 6) : 3;
-  S.active.exercises.push({ exId, target: '', rest: null, note: '', sets: Array.from({ length: n }, () => blankSet(exId)) });
+  const n = noSets(exId) ? rowCount(exId) : prev ? Math.min(prev.length, 6) : 3;
+  S.active.exercises.push({ exId, target: '', rest: null, note: '', sets: Array.from({ length: n }, (_, j) => blankSet(exId, j)) });
   saveActive(true);
 }
 
@@ -2195,7 +2026,7 @@ function exportCSV() {
       type === 'cardio' ? (s.r ?? '') : '',
       type === 'cardio' ? (c.dist ? (s.w ?? '') : '') : type === 'carry' ? (s.r ?? '') : '',
       type === 'cardio' ? (c.dist || '') : type === 'carry' ? 'm' : '',
-      type === 'cardio' && c.extra ? `${c.extra}=${s.x ?? ''}` : isSection(type) ? Object.entries(s).filter(([k]) => k !== 'ok').map(([k, v]) => `${k}=${v}`).join('; ') : '',
+      type === 'cardio' && c.extra ? `${c.extra}=${s.x ?? ''}` : isSection(type) ? Object.entries(s).filter(([k]) => k !== 'ok' && k !== 'row').map(([k, v]) => `${k}=${v}`).join('; ') : '',
       Math.round((w.duration || 0) / 60),
     ]);
   })));
@@ -2325,9 +2156,10 @@ A['set-done'] = (el) => {
     // fill blanks from placeholders
     const row = el.closest('.setrow');
     row.querySelectorAll('[data-f]').forEach((inp) => { if (!inp.value && inp.placeholder) { inp.value = inp.placeholder; s[inp.dataset.f] = inp.placeholder; } });
-    if (type === 'custom') {
-      if (!sectionFields(e.exId).some((b) => num(s[b.k]) != null)) { toast(t('enter_any'), 'error'); row.querySelector('[data-f]')?.focus(); return; }
-    } else if (type !== 'check') {
+    if (isSection(type)) {
+      const fl = rowDef(e.exId, j).fields;
+      if (fl.length && !fl.some((b) => num(s[b.k]) != null)) { toast(t('enter_any'), 'error'); row.querySelector('[data-f]')?.focus(); return; }
+    } else {
       if (num(s.r) == null && !(type === 'cardio' && num(s.w) != null)) { toast(t(type === 'cardio' ? 'enter_cardio' : 'enter_reps'), 'error'); row.querySelector('[data-f="r"]')?.focus(); return; }
       if ((type === 'weight' || type === 'carry') && num(s.w) == null) s.w = '0';
     }
@@ -2340,8 +2172,13 @@ A['set-done'] = (el) => {
 A['set-add'] = (el) => {
   const e = act().exercises[+el.dataset.i];
   const last = e.sets[e.sets.length - 1];
-  const next = { w: last ? last.w : '', r: last ? last.r : '', x: last ? last.x : '', done: false };
-  if (exType(e.exId) === 'custom') sectionFields(e.exId).forEach((b) => (next[b.k] = last && last[b.k] != null ? last[b.k] : ''));
+  let next;
+  if (isSection(exType(e.exId))) {
+    // a row beyond the ones you designed repeats the last row, with its values
+    const j = e.sets.length;
+    next = blankSet(e.exId, j);
+    if (last && j >= sectionRows(e.exId).length) rowDef(e.exId, j).fields.forEach((b) => (next[b.k] = last[b.k] != null ? last[b.k] : ''));
+  } else next = { w: last ? last.w : '', r: last ? last.r : '', x: last ? last.x : '', done: false };
   e.sets.push(next);
   saveActive(true); render();
 };
@@ -2371,7 +2208,7 @@ A['ex-menu'] = (el) => {
       if (m === 'up' || m === 'down') { const n = i + (m === 'up' ? -1 : 1); [list[i], list[n]] = [list[n], list[i]]; }
       if (m === 'del') list.splice(i, 1);
       if (m === 'swap') return exercisePicker((exId) => { e.exId = exId; saveActive(true); render(); }, t('replace_ex'));
-      if (m === 'edit') return isSection(exType(e.exId)) ? sectionSheet(getEx(e.exId), () => { saveActive(true); render(); }) : columnsSheet(e.exId, () => render());
+      if (m === 'edit') return isSection(exType(e.exId)) ? sectionSheet(getEx(e.exId), () => { syncSections(); saveActive(true); render(); }) : columnsSheet(e.exId, () => render());
       if (m === 'info') return exerciseSheet(e.exId);
       saveActive(true); render();
     }),
@@ -2478,11 +2315,10 @@ A['row-title'] = async (el) => {
   if (!rec) return;
   const v = await promptDialog({ title: t('rename_row'), value: rowTitle(e.exId, j), ok: t('save'), cancel: t('cancel'), placeholder: t('row_title_ph'), required: false });
   if (v == null) return;
-  const titles = [...(rec.rowTitles || [])];
-  while (titles.length < j) titles.push('');
-  titles[j] = v;
-  while (titles.length && !titles[titles.length - 1]) titles.pop();
-  if (titles.length) rec.rowTitles = titles; else delete rec.rowTitles;
+  // sections made before rows had their own boxes are turned into rows the first time a row is renamed
+  if (!rec.rows) { rec.rows = sectionRows(rec.id).map((r) => ({ title: r.title, fields: r.fields })); delete rec.fields; delete rec.rowTitles; rec.type = 'custom'; }
+  while (rec.rows.length <= j) rec.rows.push({ title: '', fields: rec.rows[rec.rows.length - 1].fields });
+  rec.rows[j].title = v;
   persist('exercises', rec);
   render();
 };
@@ -2508,7 +2344,6 @@ document.addEventListener('input', (e) => {
   } else if (el.matches('[data-title]') && S.active) { S.active.title = el.value; saveActive(); }
   else if (el.matches('[data-wnote]') && S.active) { S.active.notes = el.value; saveActive(); }
   else if (el.matches('[data-note]') && S.active) { S.active.exercises[+el.dataset.note].note = el.value; saveActive(); }
-  else if (el.matches('[data-tool]')) updateTools(document.getElementById('view'), el.dataset.tool);
   else if (el.matches('[data-ex-search]')) {
     S.ui.exSearch = el.value;
     const pos = el.selectionStart;
