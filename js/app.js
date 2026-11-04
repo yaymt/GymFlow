@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.12.5';
+const VERSION = '1.13.0';
 
 /* =========================================================
    State
@@ -106,6 +106,9 @@ const partsOf = (g) => (g.startsWith('cat:') ? ((secById(g.slice(4)) || {}).part
 
 // Custom sections: a box you design yourself. "check" = just a tick and a note; "custom" = the boxes you pick.
 const BOXES = [['w', 'box_kg'], ['reps', 'box_reps'], ['min', 'box_min'], ['sec', 'box_sec'], ['km', 'box_km'], ['m', 'box_m'], ['kcal', 'box_kcal']];
+// the ready-made boxes have a fixed unit of their own
+const AUTO_UNIT = { min: 'min_short', sec: 'sec_short', km: 'km', m: 'm_short', kcal: 'box_kcal' };
+const isCat = (k) => BOXES.some(([x]) => x === k);
 const isSection = (type) => type === 'check' || type === 'custom';
 // A section is a list of rows; each row has a title and its own boxes. Sections made before rows had their own boxes
 // have one list of boxes (and optional row titles) shared by all rows, which is read here as the same list on every row.
@@ -119,16 +122,16 @@ const rowDef = (exId, j) => { const rows = sectionRows(exId); return rows[Math.m
 const sectionFields = (exId) => rowDef(exId, 0).fields;
 const rowCount = (exId) => (isSection(exType(exId)) ? sectionRows(exId).length : 1);
 const boxName = (b) => b.label || t((BOXES.find(([k]) => k === b.k) || [])[1] || 'box_min');
-const boxUnit = (b) => (b.k === 'w' ? uLabel() : b.unit || '');
+const boxUnit = (b) => (b.k === 'w' ? uLabel() : b.unit || (AUTO_UNIT[b.k] ? t(AUTO_UNIT[b.k]) : ''));
 const boxLabel = (b) => boxName(b) + (boxUnit(b) ? ` (${boxUnit(b)})` : '');
 // the kilogram box follows your unit setting (kg or lb), like the weight of a normal exercise
-const boxText = (b, v, aUnit) => (b.k === 'w' ? `${fmtNum(aUnit === 'lb' ? v * LB : v)} ${t('u_' + (aUnit || unit()))}` : `${fmtNum(v)} ${b.unit || boxName(b)}`);
+const boxText = (b, v, aUnit) => (b.k === 'w' ? `${fmtNum(aUnit === 'lb' ? v * LB : v)} ${t('u_' + (aUnit || unit()))}` : `${fmtNum(v)} ${boxUnit(b) || boxName(b)}`);
 const hasLoadBox = (exId) => exType(exId) === 'custom' && sectionRows(exId).some((r) => r.fields.some((b) => b.k === 'w'));
 const rowTitle = (exId, j) => String((sectionRows(exId)[j] || {}).title || '').trim();
 const noSets = (exId) => { const ty = exType(exId); return ty === 'cardio' || isSection(ty); };
 const blankSet = (exId, j = 0) => {
   const st = { w: '', r: '', x: '', done: false };
-  if (exType(exId) === 'custom') rowDef(exId, j).fields.forEach((b) => (st[b.k] = ''));
+  if (exType(exId) === 'custom') rowDef(exId, j).fields.forEach((b) => (st[b.k] = b.fixed != null ? String(b.fixed) : ''));
   return st;
 };
 const colsBase = (exId) => {
@@ -954,10 +957,10 @@ async function finishWorkout() {
       // a section keeps the rows you ticked or filled in; only the boxes it has are saved
       const kept = [];
       e.sets.forEach((s, j) => {
-        const keys = rowDef(e.exId, j).fields.map((b) => b.k);
-        if (!(s.done || keys.some((k) => num(s[k]) != null))) return;
+        const fl = rowDef(e.exId, j).fields;
+        if (!(s.done || fl.some((b) => b.fixed == null && num(s[b.k]) != null))) return;
         const out = { ok: 1, row: j };
-        keys.forEach((k) => { const v = num(s[k]); if (v != null) out[k] = k === 'w' ? fromDisp(v, A.unit) : v; });
+        fl.forEach((b) => { const v = b.fixed != null ? b.fixed : num(s[b.k]); if (v != null) out[b.k] = b.k === 'w' ? fromDisp(v, A.unit) : v; });
         kept.push(out);
       });
       return { exId: e.exId, target: e.target || '', rest: null, note: e.note || '', sets: kept };
@@ -1574,7 +1577,9 @@ function previewSheet(id, onChoose) {
 const userMethods = () => S.profile.methods || [];
 const catalogName = (k) => { const r = BOXES.find(([x]) => x === k); return r ? t(r[1]) : ''; };
 // boxes as the editor shows them; old sections only stored a key, so fall back to the built-in name
-const boxEntries = (fields) => (fields || []).map((b) => ({ k: b.k, label: b.label || (b.k === 'w' ? '' : catalogName(b.k)), unit: b.unit || '' }));
+const boxEntries = (fields) => (fields || []).map((b) => ({ k: b.k, label: b.label || (b.k === 'w' ? '' : catalogName(b.k)), unit: b.unit || '', fx: b.fixed != null, fixed: b.fixed != null ? String(b.fixed) : '' }));
+// what a box looks like once saved; a fixed number only makes sense for boxes other than the kilogram one
+const fixedOf = (b) => (b.k !== 'w' && b.fx && b.fixed !== '' && Number.isFinite(+b.fixed) ? { fixed: +b.fixed } : {});
 // the boxes that match how a library exercise is counted
 const boxesFor = (ex) => {
   const mk = (k, unit = '') => ({ k, label: k === 'w' ? '' : catalogName(k), unit });
@@ -1598,7 +1603,7 @@ function sectionRowHtml(e, i, s, j, prev, A, st) {
   st.sig = fl.length ? sig : null;
   const no = `<span class="setno">${j + 1}</span>`;
   const ttl = `<button type="button" class="sec-title ${title ? '' : 'muted'}" data-act="row-title" data-i="${i}" data-j="${j}" aria-label="${t('rename_row')}">${esc(title)}</button>`;
-  const boxes = fl.map((b) => `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${b.k}" data-i="${i}" data-j="${j}" value="${esc(s[b.k] ?? '')}" placeholder="${esc(ph(b.k))}" aria-label="${esc(boxLabel(b))}"/>`).join('');
+  const boxes = fl.map((b) => b.fixed != null ? `<span class="fixed-val" aria-label="${esc(boxLabel(b))}">${fmtNum(b.fixed)}</span>` : `<input class="input set-in" inputmode="decimal" enterkeyhint="next" data-f="${b.k}" data-i="${i}" data-j="${j}" value="${esc(s[b.k] ?? '')}" placeholder="${esc(ph(b.k))}" aria-label="${esc(boxLabel(b))}"/>`).join('');
   return `${head}<div class="setrow sec ${s.done ? 'done' : ''} cols-${fl.length}" style="--n:${fl.length}" data-i="${i}" data-j="${j}">${no}${ttl}${boxes}<button class="check" data-act="set-done" data-i="${i}" data-j="${j}" aria-pressed="${s.done ? 'true' : 'false'}" aria-label="${t('done')}">${icon('check')}</button></div>`;
 }
 
@@ -1653,7 +1658,12 @@ function sectionSheet(existing, onSaved) {
             ${r.boxes.length ? '' : `<p class="muted small">${t('no_boxes')}</p>`}
             <div class="box-list">${r.boxes.map((b, bi) => `<div class="box-row">
               <input class="input" data-bl="${ri}:${bi}" value="${esc(b.label)}" placeholder="${esc(b.k === 'w' ? catalogName('w') : t('box_name_ph'))}" maxlength="16" aria-label="${t('box_name_ph')}"/>
-              <input class="input box-unit" data-bu="${ri}:${bi}" value="${esc(b.k === 'w' ? uLabel() : b.unit)}" placeholder="${t('box_unit_ph')}" maxlength="8" ${b.k === 'w' ? 'disabled' : ''} aria-label="${t('box_unit_ph')}"/>
+              ${b.k === 'w'
+    ? `<input class="input box-unit" value="${esc(uLabel())}" disabled aria-label="${t('box_unit_ph')}"/>`
+    : b.fx || isCat(b.k)
+      ? `<input class="input box-unit" data-bfv="${ri}:${bi}" inputmode="decimal" value="${esc(b.fixed)}" placeholder="${t(b.k === 'reps' ? 'fixed_reps' : 'fixed_val')}" maxlength="6" ${b.fx ? '' : 'disabled'} aria-label="${t(b.k === 'reps' ? 'fixed_reps' : 'fixed_val')}"/>`
+      : `<input class="input box-unit" data-bu="${ri}:${bi}" value="${esc(b.unit)}" placeholder="${t('box_unit_ph')}" maxlength="8" aria-label="${t('box_unit_ph')}"/>`}
+              ${b.k === 'w' ? '<span></span>' : `<button type="button" class="chip fx-btn ${b.fx ? 'on' : ''}" data-bfx="${ri}:${bi}" aria-pressed="${b.fx ? 'true' : 'false'}">${t('fixed_on')}</button>`}
               <button type="button" class="icon-btn sm danger" data-bdel="${ri}:${bi}" aria-label="${t('delete')}">${icon('x')}</button></div>`).join('')}</div>
             <div class="chips-wrap quick-add"><button type="button" class="chip chip-add" data-badd="${ri}">${icon('plus')}${t('add_box')}</button>
               ${BOXES.map(([k, lk]) => `<button type="button" class="chip" data-bquick="${ri}:${k}">${t(lk)}</button>`).join('')}</div>
@@ -1663,7 +1673,7 @@ function sectionSheet(existing, onSaved) {
         const r = rows[ri];
         if (r.boxes.length >= 6) return err('section_too_many');
         if (key && r.boxes.some((b) => b.k === key)) { if (!label) label = catalogName(key); key = ''; }
-        r.boxes.push({ k: key, label, unit: '' });
+        r.boxes.push({ k: key, label, unit: '', fx: false, fixed: '' });
         draw();
         editor.querySelector(`[data-bl="${ri}:${r.boxes.length - 1}"]`)?.focus();
       };
@@ -1672,12 +1682,18 @@ function sectionSheet(existing, onSaved) {
         if (x.dataset.rtitle != null) rows[+x.dataset.rtitle].title = x.value;
         else if (x.dataset.bl != null) { const [r, b] = x.dataset.bl.split(':'); rows[+r].boxes[+b].label = x.value; }
         else if (x.dataset.bu != null) { const [r, b] = x.dataset.bu.split(':'); rows[+r].boxes[+b].unit = x.value; }
+        else if (x.dataset.bfv != null) { const [r, b] = x.dataset.bfv.split(':'); rows[+r].boxes[+b].fixed = x.value.replace(/[^0-9.]/g, ''); }
         else if (x.dataset.lab != null) labels[x.dataset.lab] = x.value.trim();
       });
       editor.addEventListener('click', (ev) => {
         const g = (a) => ev.target.closest(`[${a}]`);
         if (g('data-bdel')) { const [r, b] = g('data-bdel').dataset.bdel.split(':'); rows[+r].boxes.splice(+b, 1); draw(); }
         else if (g('data-badd')) addBox(+g('data-badd').dataset.badd);
+        else if (g('data-bfx')) {
+          const [r, b] = g('data-bfx').dataset.bfx.split(':'); const bx = rows[+r].boxes[+b];
+          bx.fx = !bx.fx; if (bx.fx) bx.unit = ''; draw();
+          if (bx.fx) editor.querySelector(`[data-bfv="${r}:${b}"]`)?.focus();
+        }
         else if (g('data-bquick')) {
           const [r, k] = g('data-bquick').dataset.bquick.split(':');
           addBox(+r, rows[+r].boxes.some((b) => b.k === k) ? '' : k, k === 'w' ? '' : catalogName(k));
@@ -1710,7 +1726,7 @@ function sectionSheet(existing, onSaved) {
             const sv = saved.find((x) => x.id === use.dataset.tpl);
             if (!sv) return;
             const src = sv.rows || [{ title: '', fields: sv.fields || [] }];
-            rows = src.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) }));
+            rows = src.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) }));
             draw();
           }
         });
@@ -1722,11 +1738,11 @@ function sectionSheet(existing, onSaved) {
         if (!title) { form.elements.title.focus(); return err('section_need_title'); }
         const tplRows = rows.map((r) => ({
           title: r.title.trim(),
-          fields: r.boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim()).map((b, bi) => ({ k: b.k === 'w' ? 'w' : 'f' + (bi + 1), label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${bi + 1}`), ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}) })),
+          fields: r.boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim() || fixedOf(b).fixed != null).map((b, bi) => ({ k: b.k === 'w' ? 'w' : isCat(b.k) ? b.k : 'f' + (bi + 1), label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${bi + 1}`), ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}), ...fixedOf(b) })),
         }));
         if (!tplRows.some((r) => r.fields.length)) return err('section_need_box');
         const id = 'm_' + uid().slice(0, 8);
-        S.profile.methods = [...userMethods(), { id, name: title, rows: tplRows.map((r) => ({ title: r.title, fields: r.fields.map((f) => ({ ...f, k: f.k === 'w' ? 'w' : '' })) })) }];
+        S.profile.methods = [...userMethods(), { id, name: title, rows: tplRows.map((r) => ({ title: r.title, fields: r.fields.map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) })) }];
         saveProfile(); saved = userMethods(); renderTpls();
         err(''); toast(t('tpl_saved'), 'success');
       });
@@ -1756,10 +1772,11 @@ function sectionSheet(existing, onSaved) {
             const used = new Set(r.boxes.map((b) => b.k).filter(Boolean));
             let n = 1;
             const fresh = () => { while (used.has('f' + n)) n++; used.add('f' + n); return 'f' + n; };
-            const fields = r.boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim()).map((b, bi) => ({
+            const fields = r.boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim() || fixedOf(b).fixed != null).map((b, bi) => ({
               k: b.k || fresh(),
               label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${bi + 1}`),
-              ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}),
+              ...(b.k !== 'w' && b.unit.trim() && fixedOf(b).fixed == null ? { unit: b.unit.trim() } : {}),
+              ...fixedOf(b),
             }));
             return { title: r.title.trim(), fields };
           });

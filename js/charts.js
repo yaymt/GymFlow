@@ -1,7 +1,7 @@
 // Lightweight SVG charts (no dependencies). Everything returns an SVG string.
 import { esc } from './ui.js';
 
-const PLATE_COLORS = ['var(--plate-red)', 'var(--plate-blue)', 'var(--plate-yellow)', 'var(--plate-green)'];
+const PLATE_COLORS = ['var(--bar-1, var(--plate-red))', 'var(--bar-2, var(--plate-blue))', 'var(--bar-3, var(--plate-yellow))', 'var(--bar-4, var(--plate-green))'];
 
 const niceNum = (n) => {
   if (!isFinite(n)) return '';

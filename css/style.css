@@ -876,7 +876,7 @@ button.wrow { width: 100%; text-align: start; font: inherit; color: inherit; }
 /* ---------- Section editor ---------- */
 .editor { display: grid; gap: 10px; }
 .box-list { display: grid; gap: 8px; }
-.box-row { display: grid; grid-template-columns: 1fr 84px 34px; gap: 6px; align-items: center; }
+.box-row { display: grid; grid-template-columns: 1fr 84px 54px 34px; gap: 6px; align-items: center; }
 .box-row .input { min-height: 42px; }
 .quick-add .chip { height: 32px; font-size: .8rem; }
 .save-method { display: grid; gap: 10px; }
@@ -991,3 +991,11 @@ button.check-label.muted { color: var(--muted); }
 .tpl { position: relative; display: inline-flex; }
 .tpl .chip { padding-inline-end: 22px; }
 .tpl-x { position: absolute; top: -6px; inset-inline-end: -4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--danger); color: #fff; font-size: 14px; line-height: 1; border: 2px solid var(--surface); }
+
+/* a fixed box: the number you set in the section, shown in the workout instead of an empty box */
+.fx-btn { min-height: 42px; justify-content: center; }
+.fx-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.fixed-val { min-height: 44px; display: grid; place-items: center; border-radius: var(--r-md, 12px); font-weight: 700; font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--accent) 14%, var(--surface-2, var(--surface))); border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line)); }
+[data-style="rose"] {
+  --bar-1: #BE185D; --bar-2: #EC4899; --bar-3: #F472B6; --bar-4: #F9A8D4;
+}
