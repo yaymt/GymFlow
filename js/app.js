@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.14.1';
+const VERSION = '1.14.2';
 
 /* =========================================================
    State
@@ -2204,9 +2204,12 @@ A['section-log'] = () => sectionSheet(null, (exId) => { addToActive(exId); rende
 A['item-add'] = (el) => { const p = plan(), d = +el.dataset.d; exercisePicker((exId) => { p.days[d].items.push({ exId, ...itemDefaults(exId), rest: null }); savePlan(p); render(); }); };
 A['item-menu'] = (el) => {
   const p = plan(), d = +el.dataset.d, i = +el.dataset.i, items = p.days[d].items;
+  // a section you made yourself can be edited from here, in the same window used to add it
+  const ownSec = S.exercises.find((x) => x.id === items[i].exId && x.section);
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(items[i].exId))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <div class="menu-list">
+        ${ownSec ? `<button data-m="edit">${icon('edit')}${t('edit')}</button>` : ''}
         <button data-m="up" ${i === 0 ? 'disabled' : ''}>${icon('up')}${t('move_up')}</button>
         <button data-m="down" ${i === items.length - 1 ? 'disabled' : ''}>${icon('down')}${t('move_down')}</button>
         <button data-m="swap">${icon('repeat')}${t('replace_ex')}</button>
@@ -2221,6 +2224,7 @@ A['item-menu'] = (el) => {
       if (m === 'del') items.splice(i, 1);
       if (m === 'swap') return exercisePicker((exId) => { if (exType(exId) !== exType(items[i].exId)) Object.assign(items[i], itemDefaults(exId), { rest: null }); items[i].exId = exId; savePlan(p); render(); }, t('replace_ex'));
       if (m === 'info') return exerciseSheet(items[i].exId);
+      if (m === 'edit') return sectionSheet(ownSec, () => { if (S.active) { syncSections(); saveActive(true); } render(); });
       savePlan(p); render();
     }),
   });
