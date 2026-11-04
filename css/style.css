@@ -987,10 +987,6 @@ button.check-label.muted { color: var(--muted); }
 }
 @media (prefers-reduced-motion: reduce) { .fx-piece, .fx-rain { display: none; } [data-style="rose"] .btn-primary { animation: none; } }
 
-/* saved templates: a small x in the corner */
-.tpl { position: relative; display: inline-flex; }
-.tpl .chip { padding-inline-end: 22px; }
-.tpl-x { position: absolute; top: -6px; inset-inline-end: -4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--danger); color: #fff; font-size: 14px; line-height: 1; border: 2px solid var(--surface); }
 
 /* a fixed box: the number you set in the section, shown in the workout instead of an empty box */
 .fx-btn { min-height: 42px; justify-content: center; }
@@ -999,6 +995,18 @@ button.check-label.muted { color: var(--muted); }
 [data-style="rose"] {
   --bar-1: #BE185D; --bar-2: #EC4899; --bar-3: #F472B6; --bar-4: #F9A8D4;
 }
-.shared-box .chip { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; line-height: 1.2; padding-block: 6px; }
-.shared-box .chip small { font-size: .72rem; font-weight: 400; }
+/* saved templates in the section window: a list that opens on tap */
+.tpl-list { border: 1px solid var(--line); border-radius: var(--r, 14px); background: var(--surface-2, var(--surface)); }
+.tpl-list[hidden] { display: none; }
+.tpl-list > summary { cursor: pointer; padding: 12px 14px; font-weight: 600; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+.tpl-list > summary::-webkit-details-marker { display: none; }
+.tpl-list > summary::after { content: '▾'; color: var(--muted); transition: transform .2s; }
+.tpl-list[open] > summary::after { transform: rotate(180deg); }
+.tpl-items { display: grid; max-height: 260px; overflow-y: auto; border-top: 1px solid var(--line); }
+.tpl-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 4px; border-bottom: 1px solid var(--line); }
+.tpl-item:last-child { border-bottom: 0; }
+.tpl-use { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: start; background: none; border: 0; padding: 8px 10px; border-radius: 10px; cursor: pointer; color: var(--text); }
+.tpl-use:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tpl-use b { font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-use small { color: var(--muted); font-size: .76rem; }
 .item-fixed { font-size: .8rem; font-weight: 700; text-align: center; line-height: 1.2; color: var(--accent-ink, var(--text)); word-break: break-word; }

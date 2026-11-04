@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.14.2';
+const VERSION = '1.14.3';
 
 /* =========================================================
    State
@@ -260,8 +260,7 @@ const shareRows = (rows) => (rows || []).slice(0, 10).map((r) => ({
 function wantedShares() {
   const owner = S.profile.username || S.profile.name || '';
   const tpl = userMethods().map((m) => ({ id: myShareId('t_' + m.id), kind: 'tpl', name: String(m.name || '').slice(0, 40), rows: shareRows(m.rows || [{ title: '', fields: m.fields || [] }]) }));
-  const sec = S.exercises.filter((e) => e.section && e.type === 'custom').map((e) => ({ id: myShareId('s_' + e.id), kind: 'sec', name: String(e.name || '').slice(0, 40), rows: shareRows(sectionRows(e.id)) }));
-  return [...tpl, ...sec].map((d) => ({ ...d, ownerName: String(owner).slice(0, 40) }));
+  return tpl.map((d) => ({ ...d, ownerName: String(owner).slice(0, 40) }));
 }
 let shareTimer;
 function syncShared() {
@@ -292,7 +291,7 @@ async function loadShared() {
   return S.shared;
 }
 // what other people shared, newest first
-const othersShared = () => S.shared.filter((d) => d.ownerUid !== S.user.uid && d.rows && d.rows.length).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 40);
+const othersShared = () => S.shared.filter((d) => d.ownerUid !== S.user.uid && d.kind === 'tpl' && d.rows && d.rows.length).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 40);
 
 const activeKey = () => `gymflow:active:${S.user ? S.user.uid : 'x'}`;
 const loadActive = () => { try { S.active = JSON.parse(localStorage.getItem(activeKey())); } catch { S.active = null; } };
@@ -1675,8 +1674,7 @@ function sectionSheet(existing, onSaved) {
         <p class="part-title">3. ${legacy ? t('rename_heads') : t('rows_title')}</p>
         ${legacy ? '' : `<p class="muted small">${t('always_check')} ${t('rows_hint')}</p>`}
         <div class="editor" data-editor></div>
-        ${legacy ? '' : `<div class="chips-wrap quick-add" data-tpls ${saved.length ? '' : 'hidden'}></div>`}
-        ${legacy ? '' : `<div class="chips-wrap quick-add shared-box" data-shared hidden></div>`}
+        ${legacy ? '' : `<details class="tpl-list" data-tpls hidden><summary></summary><div class="tpl-items"></div></details>`}
         ${legacy ? '' : `<div class="save-method">
           <button type="button" class="btn btn-ghost btn-sm" data-save-tpl>${icon('plus')}${t('save_method')}</button>
           <p class="muted small">${t('save_method_explain')}</p>
@@ -1753,51 +1751,43 @@ function sectionSheet(existing, onSaved) {
           editor.querySelector(`[data-rtitle="${rows.length - 1}"]`)?.focus();
         }
       });
-      // saved templates: tap one to use it, tap the small x in its corner to delete it
+      // saved templates, yours and other members': a list that opens on tap, each with its name and who made it.
+      // Tap one to use it; yours (and any, for the owner) can be deleted with the x
       const tplBox = s.querySelector('[data-tpls]');
+      const me = () => S.profile.username || S.profile.name || t('you');
+      const tplItems = () => [
+        ...saved.map((x) => ({ id: 'm:' + x.id, name: x.name, by: me(), rows: x.rows || [{ title: '', fields: x.fields || [] }], del: true })),
+        ...othersShared().map((d) => ({ id: 's:' + d.id, name: d.name, by: d.ownerName || '', rows: d.rows, del: isSuper() })),
+      ];
       const renderTpls = () => {
         if (!tplBox) return;
-        tplBox.hidden = !saved.length;
-        tplBox.innerHTML = `<span class="muted small">${t('my_templates')}</span>` + saved.map((x) => `<span class="tpl"><button type="button" class="chip" data-tpl="${x.id}">${esc(x.name)}</button><button type="button" class="tpl-x" data-tpl-del="${x.id}" aria-label="${t('delete')}">×</button></span>`).join('');
+        const list = tplItems();
+        tplBox.hidden = !list.length;
+        tplBox.querySelector('summary').textContent = `${t('saved_templates')} (${list.length})`;
+        tplBox.querySelector('.tpl-items').innerHTML = list.map((x) => `<div class="tpl-item">
+            <button type="button" class="tpl-use" data-tpl="${esc(x.id)}"><b>${esc(x.name)}</b><small>${esc(x.by)}</small></button>
+            ${x.del ? `<button type="button" class="icon-btn sm danger" data-tpl-del="${esc(x.id)}" aria-label="${t('delete')}">${icon('x')}</button>` : ''}
+          </div>`).join('');
       };
       if (tplBox) {
         renderTpls();
+        loadShared().then(() => { if (tplBox.isConnected) renderTpls(); });
         tplBox.addEventListener('click', async (ev) => {
           const del = ev.target.closest('[data-tpl-del]'), use = ev.target.closest('[data-tpl]');
           if (del) {
             if (!(await confirmDialog({ title: t('tpl_delete_q'), ok: t('delete'), cancel: t('cancel'), danger: true }))) return;
-            S.profile.methods = userMethods().filter((x) => x.id !== del.dataset.tplDel);
-            saveProfile(); saved = userMethods(); renderTpls();
+            const [kind, id] = [del.dataset.tplDel.slice(0, 1), del.dataset.tplDel.slice(2)];
+            if (kind === 'm') { S.profile.methods = userMethods().filter((x) => x.id !== id); saveProfile(); saved = userMethods(); }
+            else {
+              try { await store.sharedDel(id); S.shared = S.shared.filter((x) => x.id !== id); } catch (e) { toast(t('err_save'), 'error'); return; }
+            }
+            renderTpls();
           } else if (use) {
-            const sv = saved.find((x) => x.id === use.dataset.tpl);
-            if (!sv) return;
-            const src = sv.rows || [{ title: '', fields: sv.fields || [] }];
-            rows = src.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) }));
-            draw();
-          }
-        });
-      }
-      // shared by other people: tap to copy it into this section, the owner can also remove any of them
-      const shBox = s.querySelector('[data-shared]');
-      const renderShared = () => {
-        if (!shBox) return;
-        const list = othersShared();
-        shBox.hidden = !list.length;
-        shBox.innerHTML = `<span class="muted small">${t('shared_title')}</span>` + list.map((d) => `<span class="tpl"><button type="button" class="chip" data-sh="${esc(d.id)}">${esc(d.name)}<small class="muted">${t(d.kind === 'sec' ? 'shared_sec' : 'shared_tpl')}${d.ownerName ? ' · ' + esc(d.ownerName) : ''}</small></button>${isSuper() ? `<button type="button" class="tpl-x" data-sh-del="${esc(d.id)}" aria-label="${t('delete')}">×</button>` : ''}</span>`).join('');
-      };
-      if (shBox) {
-        renderShared();
-        loadShared().then(() => { if (shBox.isConnected) renderShared(); });
-        shBox.addEventListener('click', async (ev) => {
-          const del = ev.target.closest('[data-sh-del]'), use = ev.target.closest('[data-sh]');
-          if (del) {
-            if (!(await confirmDialog({ title: t('tpl_delete_q'), ok: t('delete'), cancel: t('cancel'), danger: true }))) return;
-            try { await store.sharedDel(del.dataset.shDel); S.shared = S.shared.filter((x) => x.id !== del.dataset.shDel); renderShared(); } catch (e) { toast(t('err_save'), 'error'); }
-          } else if (use) {
-            const d = S.shared.find((x) => x.id === use.dataset.sh);
-            if (!d) return;
-            rows = d.rows.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields) }));
-            if (!form.elements.title.value.trim()) form.elements.title.value = d.name;
+            const x = tplItems().find((y) => y.id === use.dataset.tpl);
+            if (!x) return;
+            rows = x.rows.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) }));
+            if (!form.elements.title.value.trim()) form.elements.title.value = x.name;
+            tplBox.open = false;
             draw();
           }
         });
