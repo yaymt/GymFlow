@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { barbell } from './charts.js';
 
-const VERSION = '1.16.0';
+const VERSION = '1.16.1';
 
 /* =========================================================
    State
@@ -1610,6 +1610,34 @@ function previewSheet(id, onChoose) {
    (kg, reps, minutes, km, your own...), so one row can be minutes and another something else.
    The tick and the note are always there. */
 const userMethods = () => S.profile.methods || [];
+const normName = (n) => String(n || '').trim().toLowerCase();
+
+// copies of one section left by earlier versions (same name and same rows) become one section again;
+// plans and past workouts that used a copy now point to the one that is kept
+function mergeDupSections() {
+  const keep = new Map(), swap = new Map();
+  [...S.exercises].filter((x) => x.section && x.type === 'custom').sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach((x) => {
+    const key = normName(x.name) + '|' + JSON.stringify(x.rows || []);
+    const k = keep.get(key);
+    if (!k) { keep.set(key, x); return; }
+    swap.set(x.id, k.id);
+    if (!k.tpl && x.tpl) { k.tpl = x.tpl; persist('exercises', k); }
+  });
+  if (!swap.size) return;
+  S.plans.forEach((p) => {
+    let hit = false;
+    (p.days || []).forEach((d) => (d.items || []).forEach((it) => { if (swap.has(it.exId)) { it.exId = swap.get(it.exId); hit = true; } }));
+    if (hit) persist('plans', p);
+  });
+  S.workouts.forEach((w) => {
+    let hit = false;
+    (w.exercises || []).forEach((e) => { if (swap.has(e.exId)) { e.exId = swap.get(e.exId); hit = true; } });
+    if (hit) persist('workouts', w);
+  });
+  if (S.active) { S.active.exercises.forEach((e) => { if (swap.has(e.exId)) e.exId = swap.get(e.exId); }); saveActive(true); }
+  S.exercises = S.exercises.filter((x) => !swap.has(x.id));
+  swap.forEach((_, id) => unpersist('exercises', id));
+}
 const catalogName = (k) => { const r = BOXES.find(([x]) => x === k); return r ? t(r[1]) : ''; };
 // boxes as the editor shows them; old sections only stored a key, so fall back to the built-in name
 const boxEntries = (fields) => (fields || []).map((b) => ({ k: b.k, label: b.label || (b.k === 'w' ? '' : catalogName(b.k)), unit: b.unit || '', fx: b.fixed != null, fixed: b.fixed != null ? String(b.fixed) : '' }));
@@ -1657,6 +1685,7 @@ function sectionSheet(existing, onSaved) {
   let rows = existing && !legacy ? sectionRows(existing.id).map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields) })) : [{ title: '', boxes: [] }];
   const labels = { ...((existing && existing.labels) || {}) };
   let saved = userMethods();
+  let tplId = (existing && existing.tpl) || null; // the template this section is made from, so using it again reuses the same section
   openSheet(`<form class="sheet-body" data-sectionform>
       <div class="sheet-title"><h3>${existing ? t('section_edit') : t('add_section')}</h3><button type="button" class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       <label class="field"><span>1. ${t('section_title')}</span><input class="input" name="title" value="${esc(existing ? existing.name : '')}" maxlength="40" placeholder="${t('section_title_ph')}" required autofocus/></label>
@@ -1778,6 +1807,7 @@ function sectionSheet(existing, onSaved) {
             if (!x) return;
             rows = x.rows.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) }));
             if (!form.elements.title.value.trim()) form.elements.title.value = x.name;
+            tplId = x.id;
             tplBox.open = false;
             draw();
           }
@@ -1793,8 +1823,12 @@ function sectionSheet(existing, onSaved) {
           fields: r.boxes.filter((b) => b.k === 'w' || b.label.trim() || b.unit.trim() || fixedOf(b).fixed != null).map((b, bi) => ({ k: b.k === 'w' ? 'w' : isCat(b.k) ? b.k : 'f' + (bi + 1), label: b.label.trim() || (b.k === 'w' ? '' : `${t('box_name_ph')} ${bi + 1}`), ...(b.k !== 'w' && b.unit.trim() ? { unit: b.unit.trim() } : {}), ...fixedOf(b) })),
         }));
         if (!tplRows.some((r) => r.fields.length)) return err('section_need_box');
-        const id = 'm_' + uid().slice(0, 8);
-        S.profile.methods = [...userMethods(), { id, name: title, rows: tplRows.map((r) => ({ title: r.title, fields: r.fields.map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) })) }];
+        const mine = userMethods();
+        const same = mine.find((x) => 'm:' + x.id === tplId) || mine.find((x) => normName(x.name) === normName(title));
+        const id = same ? same.id : 'm_' + uid().slice(0, 8);
+        const tpl = { id, name: title, rows: tplRows.map((r) => ({ title: r.title, fields: r.fields.map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) })) };
+        S.profile.methods = same ? mine.map((x) => (x.id === id ? tpl : x)) : [...mine, tpl];
+        tplId = 'm:' + id;
         saveProfile(); saved = userMethods(); renderTpls();
         err(''); toast(t('tpl_saved'), 'success');
       });
@@ -1811,7 +1845,10 @@ function sectionSheet(existing, onSaved) {
         const fd = new FormData(form);
         const title = String(fd.get('title')).trim();
         if (!title) return err('section_need_title');
-        const obj = { id: existing ? existing.id : 'c_' + uid(), name: title, muscle: 'section', equip: 'other', section: true, createdAt: existing?.createdAt || Date.now() };
+        const twin = existing ? null : S.exercises.find((x) => x.section && x.type === 'custom' && ((tplId && x.tpl === tplId) || (tplId && normName(x.name) === normName(title))));
+        const base = existing || twin;
+        const obj = { id: base ? base.id : 'c_' + uid(), name: title, muscle: 'section', equip: 'other', section: true, createdAt: base?.createdAt || Date.now() };
+        if (tplId) obj.tpl = tplId;
         applyLocation(obj, String(fd.get('loc') || 'section'));
         if (legacy) {
           Object.assign(obj, { type: existing.type, dist: existing.dist, extra: existing.extra });
@@ -2546,6 +2583,7 @@ async function boot() {
       S.rewards = rewards;
       S.perms = perms;
       loadActive();
+      mergeDupSections();
       S.loaded = true;
       S.shared = []; S.sharedReady = false;
       loadShared().then(syncShared);
