@@ -1010,3 +1010,32 @@ button.check-label.muted { color: var(--muted); }
 .tpl-use b { font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tpl-use small { color: var(--muted); font-size: .76rem; }
 .item-fixed { font-size: .8rem; font-weight: 700; text-align: center; line-height: 1.2; color: var(--accent-ink, var(--text)); word-break: break-word; }
+
+/* =========================================================
+   Rose theme: calmer background, clearer cards (v1.15)
+   The hearts sit behind a light blur so they stay recognisable but never fight with the text;
+   cards, boxes and fields get a clear edge and a slightly deeper fill.
+   ========================================================= */
+[data-style="rose"] body { background-image: none; }
+[data-style="rose"] body::before {
+  content: ''; position: fixed; inset: -12px; z-index: -1; pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'><g fill='%23F472B6' fill-opacity='.075'><path d='M24 30c-5-9-16-3-10 5l10 10 10-10c6-8-5-14-10-5z'/><path d='M100 98c-5-9-16-3-10 5l10 10 10-10c6-8-5-14-10-5z'/><path d='M104 24c-3-6-11-2-7 3l7 7 7-7c4-5-4-9-7-3z' fill-opacity='.7'/><path d='M40 110c-3-6-11-2-7 3l7 7 7-7c4-5-4-9-7-3z' fill-opacity='.7'/></g></svg>");
+  background-size: 140px; filter: blur(1.4px);
+}
+[data-style="rose"] { --rose-card: color-mix(in srgb, var(--accent) 9%, var(--surface)); --rose-edge: color-mix(in srgb, var(--accent) 38%, var(--line)); --rose-field: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+[data-style="rose"][data-theme="dark"] { --rose-card: color-mix(in srgb, var(--accent) 7%, var(--surface-2)); --rose-edge: color-mix(in srgb, var(--accent) 34%, var(--line)); --rose-field: var(--surface-3); }
+[data-style="rose"] .card, [data-style="rose"] .stat, [data-style="rose"] .wrow, [data-style="rose"] .plan-card,
+[data-style="rose"] .exblock, [data-style="rose"] .stars-card, [data-style="rose"] .name-banner, [data-style="rose"] .hero,
+[data-style="rose"] .row-card, [data-style="rose"] .tpl-list, [data-style="rose"] .tpl {
+  background: var(--rose-card);
+  border: 1.5px solid var(--rose-edge);
+}
+[data-style="rose"] .sheet { background: var(--surface); border-top: 1.5px solid var(--rose-edge); }
+[data-style="rose"] .input, [data-style="rose"] .chip, [data-style="rose"] .btn-ghost, [data-style="rose"] :is(.card, .exblock, .row-card, .plan-card) .icon-btn,
+[data-style="rose"] .setno, [data-style="rose"] .check, [data-style="rose"] .seg {
+  background: var(--rose-field);
+  border: 1.5px solid var(--rose-edge);
+}
+[data-style="rose"] .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+[data-style="rose"] .setrow.done .check, [data-style="rose"] .chip-solid, [data-style="rose"] .fx-btn.on { background: var(--accent); border-color: var(--accent);  color: #fff; }
+[data-style="rose"] .tabbar { background: color-mix(in srgb, var(--surface) 94%, transparent); border-top: 1.5px solid var(--rose-edge); }
