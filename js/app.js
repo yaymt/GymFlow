@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.13.0';
+const VERSION = '1.14.0';
 
 /* =========================================================
    State
@@ -15,7 +15,7 @@ const VERSION = '1.13.0';
 const S = {
   user: null, loaded: false,
   profile: {}, plans: [], workouts: [], bodyweight: [], measurements: [], exercises: [],
-  rewards: [], adminEx: [], perms: {},
+  rewards: [], adminEx: [], perms: {}, shared: [], sharedReady: false,
   active: null,
   ui: { histMonth: null, exFilter: 'all', exSub: '', exSearch: '', authTab: 'in' },
 };
@@ -244,10 +244,53 @@ function goalStreak() {
    Persistence helpers
    ========================================================= */
 const saveErr = (err) => { console.error(err); toast(t('err_save'), 'error'); };
-const persist = (col, obj) => { store.put(col, obj).catch(saveErr); };
-const unpersist = (col, id) => { store.remove(col, id).catch(saveErr); };
+const persist = (col, obj) => { store.put(col, obj).catch(saveErr); if (col === 'exercises') syncShared(); };
+const unpersist = (col, id) => { store.remove(col, id).catch(saveErr); if (col === 'exercises') syncShared(); };
 let profileTimer;
-const saveProfile = () => { clearTimeout(profileTimer); profileTimer = setTimeout(() => store.setProfile(S.profile).catch(saveErr), 300); };
+const saveProfile = () => { clearTimeout(profileTimer); profileTimer = setTimeout(() => store.setProfile(S.profile).catch(saveErr), 300); syncShared(); };
+
+/* ---------- Shared templates and sections: what you save is visible to everyone, who can copy it ---------- */
+const myShareId = (x) => `${S.user.uid}_${x}`;
+const shareRows = (rows) => (rows || []).slice(0, 10).map((r) => ({
+  title: String(r.title || '').slice(0, 30),
+  fields: (r.fields || []).slice(0, 6).map((f) => ({ k: f.k === 'w' || isCat(f.k) ? f.k : '', label: f.label || '', ...(f.unit ? { unit: f.unit } : {}), ...(f.fixed != null ? { fixed: f.fixed } : {}) })),
+}));
+function wantedShares() {
+  const owner = S.profile.username || S.profile.name || '';
+  const tpl = userMethods().map((m) => ({ id: myShareId('t_' + m.id), kind: 'tpl', name: String(m.name || '').slice(0, 40), rows: shareRows(m.rows || [{ title: '', fields: m.fields || [] }]) }));
+  const sec = S.exercises.filter((e) => e.section && e.type === 'custom').map((e) => ({ id: myShareId('s_' + e.id), kind: 'sec', name: String(e.name || '').slice(0, 40), rows: shareRows(sectionRows(e.id)) }));
+  return [...tpl, ...sec].map((d) => ({ ...d, ownerName: String(owner).slice(0, 40) }));
+}
+let shareTimer;
+function syncShared() {
+  clearTimeout(shareTimer);
+  shareTimer = setTimeout(async () => {
+    if (!S.user || !S.loaded || !S.sharedReady) return;
+    const sig = (d) => JSON.stringify([d.kind, d.name, d.rows, d.ownerName]);
+    const mine = S.shared.filter((d) => d.ownerUid === S.user.uid);
+    const want = wantedShares();
+    try {
+      for (const d of want) {
+        const cur = mine.find((x) => x.id === d.id);
+        if (cur && sig(cur) === sig(d)) continue;
+        const full = { ...d, at: Date.now() };
+        await store.sharedPut(full);
+        S.shared = [...S.shared.filter((x) => x.id !== d.id), { ...full, ownerUid: S.user.uid }];
+      }
+      for (const d of mine) {
+        if (want.some((x) => x.id === d.id)) continue;
+        await store.sharedDel(d.id);
+        S.shared = S.shared.filter((x) => x.id !== d.id);
+      }
+    } catch (e) { console.warn('shared', e); }
+  }, 1200);
+}
+async function loadShared() {
+  try { S.shared = await store.sharedList(); S.sharedReady = true; } catch (e) { console.warn('shared', e); }
+  return S.shared;
+}
+// what other people shared, newest first
+const othersShared = () => S.shared.filter((d) => d.ownerUid !== S.user.uid && d.rows && d.rows.length).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 40);
 
 const activeKey = () => `gymflow:active:${S.user ? S.user.uid : 'x'}`;
 const loadActive = () => { try { S.active = JSON.parse(localStorage.getItem(activeKey())); } catch { S.active = null; } };
@@ -1631,6 +1674,7 @@ function sectionSheet(existing, onSaved) {
         ${legacy ? '' : `<p class="muted small">${t('always_check')} ${t('rows_hint')}</p>`}
         <div class="editor" data-editor></div>
         ${legacy ? '' : `<div class="chips-wrap quick-add" data-tpls ${saved.length ? '' : 'hidden'}></div>`}
+        ${legacy ? '' : `<div class="chips-wrap quick-add shared-box" data-shared hidden></div>`}
         ${legacy ? '' : `<div class="save-method">
           <button type="button" class="btn btn-ghost btn-sm" data-save-tpl>${icon('plus')}${t('save_method')}</button>
           <p class="muted small">${t('save_method_explain')}</p>
@@ -1727,6 +1771,31 @@ function sectionSheet(existing, onSaved) {
             if (!sv) return;
             const src = sv.rows || [{ title: '', fields: sv.fields || [] }];
             rows = src.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields).map((f) => ({ ...f, k: f.k === 'w' || isCat(f.k) ? f.k : '' })) }));
+            draw();
+          }
+        });
+      }
+      // shared by other people: tap to copy it into this section, the owner can also remove any of them
+      const shBox = s.querySelector('[data-shared]');
+      const renderShared = () => {
+        if (!shBox) return;
+        const list = othersShared();
+        shBox.hidden = !list.length;
+        shBox.innerHTML = `<span class="muted small">${t('shared_title')}</span>` + list.map((d) => `<span class="tpl"><button type="button" class="chip" data-sh="${esc(d.id)}">${esc(d.name)}<small class="muted">${t(d.kind === 'sec' ? 'shared_sec' : 'shared_tpl')}${d.ownerName ? ' · ' + esc(d.ownerName) : ''}</small></button>${isSuper() ? `<button type="button" class="tpl-x" data-sh-del="${esc(d.id)}" aria-label="${t('delete')}">×</button>` : ''}</span>`).join('');
+      };
+      if (shBox) {
+        renderShared();
+        loadShared().then(() => { if (shBox.isConnected) renderShared(); });
+        shBox.addEventListener('click', async (ev) => {
+          const del = ev.target.closest('[data-sh-del]'), use = ev.target.closest('[data-sh]');
+          if (del) {
+            if (!(await confirmDialog({ title: t('tpl_delete_q'), ok: t('delete'), cancel: t('cancel'), danger: true }))) return;
+            try { await store.sharedDel(del.dataset.shDel); S.shared = S.shared.filter((x) => x.id !== del.dataset.shDel); renderShared(); } catch (e) { toast(t('err_save'), 'error'); }
+          } else if (use) {
+            const d = S.shared.find((x) => x.id === use.dataset.sh);
+            if (!d) return;
+            rows = d.rows.map((r) => ({ title: r.title || '', boxes: boxEntries(r.fields) }));
+            if (!form.elements.title.value.trim()) form.elements.title.value = d.name;
             draw();
           }
         });
@@ -2484,6 +2553,8 @@ async function boot() {
       S.perms = starsOn() ? await store.myPerms().catch(() => ({})) : {};
       loadActive();
       S.loaded = true;
+      S.shared = []; S.sharedReady = false;
+      loadShared().then(syncShared);
       applyAppearance();
       document.getElementById('app').innerHTML = '';
       if (!location.hash) history.replaceState(null, '', '#/home');

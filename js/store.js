@@ -91,6 +91,11 @@ function localBackend() {
       db.rewards[r.id] = r; write(db); return r;
     },
     async adminRemoveReward(uid, id) { const db = getDb(); if (db.rewards) delete db.rewards[id]; write(db); },
+
+    // templates and sections shared with everybody (local mode only has your own)
+    async sharedList() { return Object.values(getDb().shared || {}); },
+    async sharedPut(d) { const db = getDb(); db.shared = db.shared || {}; db.shared[d.id] = clean({ ...d, ownerUid: 'local' }); write(db); },
+    async sharedDel(id) { const db = getDb(); if (db.shared) delete db.shared[id]; write(db); },
   };
 }
 
@@ -214,6 +219,14 @@ async function cloudBackend() {
       return r;
     },
     adminRemoveReward: (uid, id) => fb.deleteDoc(fb.doc(db, 'users', uid, 'rewards', id)),
+
+    // templates and sections shared with everybody: /shared/{your uid}_{id}
+    async sharedList() {
+      const snap = await fb.getDocs(fb.collection(db, 'shared'));
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    },
+    sharedPut: (d) => fb.setDoc(fb.doc(db, 'shared', d.id), clean({ ...d, ownerUid: me() })),
+    sharedDel: (id) => fb.deleteDoc(fb.doc(db, 'shared', id)),
     async deleteAllData() {
       for (const c of COLLECTIONS) {
         const snap = await fb.getDocs(fb.collection(db, 'users', me(), c));
