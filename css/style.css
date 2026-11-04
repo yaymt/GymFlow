@@ -1001,3 +1001,4 @@ button.check-label.muted { color: var(--muted); }
 }
 .shared-box .chip { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; line-height: 1.2; padding-block: 6px; }
 .shared-box .chip small { font-size: .72rem; font-weight: 400; }
+.item-fixed { font-size: .8rem; font-weight: 700; text-align: center; line-height: 1.2; color: var(--accent-ink, var(--text)); word-break: break-word; }

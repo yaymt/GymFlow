@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.14.0';
+const VERSION = '1.14.1';
 
 /* =========================================================
    State
@@ -126,6 +126,8 @@ const boxUnit = (b) => (b.k === 'w' ? uLabel() : b.unit || (AUTO_UNIT[b.k] ? t(A
 const boxLabel = (b) => boxName(b) + (boxUnit(b) ? ` (${boxUnit(b)})` : '');
 // the kilogram box follows your unit setting (kg or lb), like the weight of a normal exercise
 const boxText = (b, v, aUnit) => (b.k === 'w' ? `${fmtNum(aUnit === 'lb' ? v * LB : v)} ${t('u_' + (aUnit || unit()))}` : `${fmtNum(v)} ${boxUnit(b) || boxName(b)}`);
+// the fixed numbers of a section (e.g. "8 تكرار"), shown as its target in the plan instead of a box to fill in
+const fixedSummary = (exId) => (exType(exId) !== 'custom' ? '' : [...new Set(sectionRows(exId).flatMap((r) => r.fields.filter((b) => b.fixed != null).map((b) => boxText(b, b.fixed))))].join(' · '));
 const hasLoadBox = (exId) => exType(exId) === 'custom' && sectionRows(exId).some((r) => r.fields.some((b) => b.k === 'w'));
 const rowTitle = (exId, j) => String((sectionRows(exId)[j] || {}).title || '').trim();
 const noSets = (exId) => { const ty = exType(exId); return ty === 'cardio' || isSection(ty); };
@@ -767,7 +769,7 @@ VIEWS.plan = (r) => {
           <button class="item-name" data-act="item-menu" data-d="${di}" data-i="${ii}">${esc(exName(it.exId))}<small>${muscleName(getEx(it.exId))}${exType(it.exId) === 'cardio' ? ` · ${t('ty_cardio_short')}` : ''}</small></button>
           ${noSets(it.exId)
             ? `<span class="item-na">–</span>
-          <input class="input input-num" value="${esc(it.reps)}" placeholder="${isSection(exType(it.exId)) ? t('target') : t('min')}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${isSection(exType(it.exId)) ? t('target') : t('min')}"/>
+          ${fixedSummary(it.exId) ? `<span class="item-fixed">${esc(fixedSummary(it.exId))}</span>` : `<input class="input input-num" value="${esc(it.reps)}" placeholder="${isSection(exType(it.exId)) ? t('target') : t('min')}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${isSection(exType(it.exId)) ? t('target') : t('min')}"/>`}
           <span class="item-na">–</span>`
             : `<input class="input input-num" inputmode="numeric" value="${esc(it.sets)}" data-pe="it-sets" data-d="${di}" data-i="${ii}" aria-label="${t('sets')}"/>
           <input class="input input-num" value="${esc(it.reps)}" placeholder="${exType(it.exId) === 'time' ? t('sec') : exType(it.exId) === 'carry' ? t('m_short') : ''}" data-pe="it-reps" data-d="${di}" data-i="${ii}" aria-label="${t('reps')}"/>
