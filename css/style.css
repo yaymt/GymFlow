@@ -1039,3 +1039,13 @@ button.check-label.muted { color: var(--muted); }
 [data-style="rose"] .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 [data-style="rose"] .setrow.done .check, [data-style="rose"] .chip-solid, [data-style="rose"] .fx-btn.on { background: var(--accent); border-color: var(--accent);  color: #fff; }
 [data-style="rose"] .tabbar { background: color-mix(in srgb, var(--surface) 94%, transparent); border-top: 1.5px solid var(--rose-edge); }
+
+/* every exercise in a list sits on its own card with a clear edge, so the rows never run into each other or the background */
+.ex-list { gap: 6px; }
+.ex-list > .ex-item, .ex-list > .ex-row { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.ex-list > .ex-row .ex-item { border-radius: 14px; }
+.ex-list > .ex-row .ex-peek { margin-inline-end: 6px; }
+.ex-list > .ex-item:hover, .ex-list > .ex-row:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.ex-list .list-label { padding: 12px 4px 2px; }
+[data-style="rose"] .ex-list > .ex-item, [data-style="rose"] .ex-list > .ex-row { background: var(--rose-card); border: 1.5px solid var(--rose-edge); }
+[data-style="rose"] .ex-list > .ex-row .ex-item:hover { background: transparent; }

@@ -7,7 +7,7 @@ import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
 import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
 
-const VERSION = '1.15.0';
+const VERSION = '1.15.1';
 
 /* =========================================================
    State
@@ -96,6 +96,8 @@ const muscleName = (e) => {
   if (sc) { const pt = (sc.parts || []).find((p) => p.id === e.part); return pt ? `${sc.name} · ${pt.name}` : sc.name; }
   return t('m_' + e.muscle);
 };
+// the grey line under an exercise name: where it belongs, the equipment and how it is counted, each said once
+const exMeta = (e) => [...new Set([muscleName(e), e.section ? '' : t('eq_' + e.equip), typeTag(e).replace(' · ', ''), !e.builtin && !e.section ? t('custom') : ''].filter(Boolean))].join(' · ');
 const matchGroup = (e, g, sub) => {
   if (g === 'all') return true;
   if (g === 'custom') return !e.builtin;
@@ -1215,7 +1217,7 @@ VIEWS.exercises = () => {
       <div class="ex-list">${groupedRows(list, f, sub, (e) => `
         <button class="ex-item" data-act="ex-open" data-id="${esc(e.id)}">
           <span class="ex-dot" style="background:var(--m-${e.muscle})"></span>
-          <span><b>${esc(exName(e))}</b><small>${muscleName(e)} · ${t('eq_' + e.equip)}${typeTag(e)}${!e.builtin ? ` · ${t('custom')}` : ''}</small></span>
+          <span><b>${esc(exName(e))}</b><small>${exMeta(e)}</small></span>
           ${counts[e.id] ? `<span class="count">${counts[e.id]}</span>` : ''}
         </button>`) || `<p class="muted center">${t('no_results')}</p>`}</div>
       <button class="btn btn-dashed" data-act="ex-new">${icon('plus')}${t('new_exercise')}</button>
@@ -1563,7 +1565,7 @@ function exercisePicker(onPick, title = t('add_exercise')) {
     let list = allExercises().filter((e) => matchGroup(e, filter, sub) && (!ql || `${e.en} ${e.ar} ${e.name || ''}`.toLowerCase().includes(ql)));
     const rec = !ql && filter === 'all' ? recent.slice(0, 8).map(getEx) : [];
     // the picture button lets you see what the exercise is before choosing it
-    const row = (e) => `<div class="ex-row"><button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${muscleName(e)} · ${t('eq_' + e.equip)}${typeTag(e)}</small></span>${icon('plus')}</button><button class="icon-btn sm ex-peek" data-preview="${esc(e.id)}" aria-label="${t('ex_details')}">${icon('image')}</button></div>`;
+    const row = (e) => `<div class="ex-row"><button class="ex-item" data-pick="${esc(e.id)}"><span class="ex-dot" style="background:var(--m-${e.muscle})"></span><span><b>${esc(exName(e))}</b><small>${exMeta(e)}</small></span>${icon('plus')}</button><button class="icon-btn sm ex-peek" data-preview="${esc(e.id)}" aria-label="${t('ex_details')}">${icon('image')}</button></div>`;
     list = list.sort((a, b) => exName(a).localeCompare(exName(b)));
     return `${rec.length ? `<p class="list-label">${t('recent')}</p>${rec.map(row).join('')}<p class="list-label">${t('all_exercises')}</p>` : ''}${groupedRows(list, filter, sub, row) || `<p class="muted center">${t('no_results')}</p>`}
       <button class="btn btn-dashed" data-new-ex>${icon('plus')}${t('new_exercise')}${ql ? `: “${esc(q)}”` : ''}</button>`;
