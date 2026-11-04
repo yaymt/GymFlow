@@ -1,6 +1,6 @@
 // Service worker: makes the app load offline (e.g. weak signal inside the gym).
 // Bump VERSION whenever you upload changed files so users get the update.
-const VERSION = 'gymflow-v1.15.1';
+const VERSION = 'gymflow-v1.16.0';
 // Exercise demo images (from the CDN) are kept in their own cache so they survive app updates and work offline once viewed.
 const MEDIA_CACHE = 'gymflow-media';
 const SHELL = [
@@ -52,13 +52,18 @@ self.addEventListener('fetch', (e) => {
   }
   // Only handle our own files; Firebase/Google traffic goes straight to the network.
   if (url.origin !== location.origin) return;
-  // Network first (so new uploads show up), cache as fallback when offline.
-  e.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
-        return res;
-      })
-      .catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('./index.html')))
-  );
+  // Network first (so new uploads show up). On a weak signal (inside the gym) the saved copy is used after 3 s,
+  // and when offline right away; the network answer still refreshes the saved copy when it arrives.
+  const fromCache = () => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('./index.html'));
+  const net = fetch(req).then((res) => {
+    if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+    return res;
+  });
+  e.respondWith(new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (!done && r) { done = true; resolve(r); } };
+    // after 3 s use the saved copy of this exact file if there is one; otherwise keep waiting for the network
+    const timer = setTimeout(() => caches.match(req, { ignoreSearch: true }).then(finish), 3000);
+    net.then((r) => { clearTimeout(timer); finish(r); }, () => { clearTimeout(timer); fromCache().then((r) => finish(r || Response.error())); });
+  }));
 });

@@ -10,7 +10,7 @@
 export const MUSCLES = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core', 'cardio', 'full'];
 
 // Sections shown in the exercise list. Arms and legs are split into parts; the parts still count separately in progress stats.
-export const LEG_MUSCLES = ['quads', 'hamstrings', 'glutes', 'calves'];
+const LEG_MUSCLES = ['quads', 'hamstrings', 'glutes', 'calves'];
 export const PARTS = { arms: ['biceps', 'triceps'], legs: LEG_MUSCLES };
 export const GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'cardio', 'full'];
 export const inGroup = (muscle, group) => (PARTS[group] ? PARTS[group].includes(muscle) : muscle === group);
@@ -202,4 +202,3 @@ export const TEMPLATES = [
   },
 ];
 
-export const MEASURE_KEYS = ['chest', 'waist', 'hips', 'arm', 'thigh', 'neck', 'calf', 'bodyfat'];

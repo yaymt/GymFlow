@@ -97,7 +97,7 @@ export function openSheet(html, { onMount, onClose, wide = false } = {}) {
   onMount && onMount(sheet, close);
   return close;
 }
-export const closeTopSheet = () => { const c = sheetStack[sheetStack.length - 1]; if (c) { c(); return true; } return false; };
+const closeTopSheet = () => { const c = sheetStack[sheetStack.length - 1]; if (c) { c(); return true; } return false; };
 export const closeAllSheets = () => { [...sheetStack].reverse().forEach((c) => c()); };
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTopSheet(); });

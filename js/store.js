@@ -3,7 +3,7 @@
 //  - Local (localStorage) otherwise, so the app works out of the box
 import { firebaseConfig } from './config.js';
 
-export const COLLECTIONS = ['plans', 'workouts', 'bodyweight', 'measurements', 'exercises'];
+const COLLECTIONS = ['plans', 'workouts', 'bodyweight', 'measurements', 'exercises'];
 
 export const isCloud = Boolean(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId);
 
@@ -130,12 +130,10 @@ async function cloudBackend() {
     signOut: () => fb.signOut(auth),
     async loadAll() {
       const out = {};
-      const p = await fb.getDoc(userDoc());
-      out.profile = p.exists() ? p.data() : {};
-      await Promise.all(COLLECTIONS.map(async (c) => {
+      await Promise.all([fb.getDoc(userDoc()).then((p) => { out.profile = p.exists() ? p.data() : {}; }), ...COLLECTIONS.map(async (c) => {
         const snap = await fb.getDocs(fb.collection(db, 'users', me(), c));
         out[c] = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-      }));
+      })]);
       return out;
     },
     put: (col, obj) => fb.setDoc(fb.doc(db, 'users', me(), col, obj.id), clean(obj)),

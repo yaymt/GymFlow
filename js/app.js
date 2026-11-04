@@ -5,9 +5,9 @@ import { MEDIA, MEDIA_BASE } from './exmedia.js';
 import { STEPS_AR } from './exsteps.js';
 import { ADMIN_UIDS } from './roles.js';
 import { esc, icon, toast, openSheet, closeAllSheets, confirmDialog, promptDialog, beep, unlockAudio, download } from './ui.js';
-import { lineChart, barChart, hBars, sparkline, barbell, plateStack, chartSlot, mountCharts, resetCharts } from './charts.js';
+import { barbell } from './charts.js';
 
-const VERSION = '1.15.1';
+const VERSION = '1.16.0';
 
 /* =========================================================
    State
@@ -157,7 +157,7 @@ const colsFor = (exId, plain) => {
 // What a plan item asks for, e.g. "4×8", "30 min", "3×45s"
 const targetText = (it) => {
   const type = exType(it.exId), reps = esc(it.reps || '');
-  if (isSection(type)) return reps;
+  if (isSection(type)) return reps || esc(fixedSummary(it.exId));
   if (type === 'cardio') return reps ? `${reps} ${t('min_short')}` : '';
   if (type === 'time') return `${it.sets}×${reps}${t('sec_short')}`;
   if (type === 'carry') return `${it.sets}×${reps}${t('m_short')}`;
@@ -172,7 +172,12 @@ const itemDefaults = (exId) => {
 /* =========================================================
    Workout analytics
    ========================================================= */
-const sortedWorkouts = () => [...S.workouts].sort((a, b) => (b.start || 0) - (a.start || 0));
+let sortedCache = { src: null, n: -1, sig: '', list: [] };
+const sortedWorkouts = () => {
+  const src = S.workouts, sig = src.length ? `${src[0].id}${src[src.length - 1].id}${src[src.length - 1].start}` : '';
+  if (sortedCache.src !== src || sortedCache.n !== src.length || sortedCache.sig !== sig) sortedCache = { src, n: src.length, sig, list: [...src].sort((a, b) => (b.start || 0) - (a.start || 0)) };
+  return sortedCache.list;
+};
 // Total lifted = the weights you logged added together (reps are not multiplied in)
 const setsTotal = (sets) => (sets || []).reduce((s, x) => s + (x.w || 0), 0);
 const workoutTotal = (w) => (w.exercises || []).reduce((sum, e) => (isLoad(exType(e.exId)) || hasLoadBox(e.exId) ? sum + setsTotal(e.sets) : sum), 0);
@@ -220,24 +225,17 @@ function lastSetsFor(exId, excludeId, before = Infinity) {
   return null;
 }
 
-function weekCounts(weeks = 12) {
-  const out = [];
-  const now = startOfWeek();
-  for (let i = weeks - 1; i >= 0; i--) {
-    const s = new Date(now); s.setDate(s.getDate() - i * 7);
-    const e = new Date(s); e.setDate(e.getDate() + 7);
-    const ws = S.workouts.filter((w) => w.start >= s.getTime() && w.start < e.getTime());
-    out.push({ start: s, count: ws.length, total: ws.reduce((a, w) => a + workoutTotal(w), 0) });
-  }
-  return out;
-}
-
 function goalStreak() {
   const goal = S.profile.weeklyGoal || 4;
-  const weeks = weekCounts(104).reverse(); // [current, last, ...]
+  const now = startOfWeek().getTime(), WEEK = 7 * 864e5;
+  const per = new Map(); // weeks back (0 = this week) -> sessions
+  S.workouts.forEach((w) => {
+    const back = Math.floor((now - startOfWeek(new Date(w.start)).getTime() + WEEK / 2) / WEEK);
+    if (back >= 0 && back < 104) per.set(back, (per.get(back) || 0) + 1);
+  });
   let streak = 0;
-  for (let i = 0; i < weeks.length; i++) {
-    if (weeks[i].count >= goal) streak++;
+  for (let i = 0; i < 104; i++) {
+    if ((per.get(i) || 0) >= goal) streak++;
     else if (i === 0) continue; // current week still in progress
     else break;
   }
@@ -248,12 +246,12 @@ function goalStreak() {
    Persistence helpers
    ========================================================= */
 const saveErr = (err) => { console.error(err); toast(t('err_save'), 'error'); };
-const persist = (col, obj) => { store.put(col, obj).catch(saveErr); if (col === 'exercises') syncShared(); };
-const unpersist = (col, id) => { store.remove(col, id).catch(saveErr); if (col === 'exercises') syncShared(); };
+const persist = (col, obj) => { store.put(col, obj).catch(saveErr); };
+const unpersist = (col, id) => { store.remove(col, id).catch(saveErr); };
 let profileTimer;
 const saveProfile = () => { clearTimeout(profileTimer); profileTimer = setTimeout(() => store.setProfile(S.profile).catch(saveErr), 300); syncShared(); };
 
-/* ---------- Shared templates and sections: what you save is visible to everyone, who can copy it ---------- */
+/* ---------- Shared templates: a template you save on purpose is visible to everyone, who can copy it ---------- */
 const myShareId = (x) => `${S.user.uid}_${x}`;
 const shareRows = (rows) => (rows || []).slice(0, 10).map((r) => ({
   title: String(r.title || '').slice(0, 30),
@@ -535,7 +533,6 @@ function render() {
   if (!document.querySelector('.main-col')) shell();
   const r = route();
   if (r.name !== 'control' && r.name !== 'admin') S.adminEx = [];
-  resetCharts();
   const fn = VIEWS[r.name] || VIEWS.home;
   const v = fn(r) || {};
   const top = document.getElementById('topbar');
@@ -549,16 +546,9 @@ function render() {
   document.querySelector('.tabbar')?.classList.toggle('training', !!S.active);
   setWake(trainingScreen() || R.end > Date.now());
   if (R.end) runRest();
-  mountCharts(view);
   v.after && v.after(view);
 }
 
-let resizeT;
-let lastW = window.innerWidth;
-window.addEventListener('resize', () => {
-  clearTimeout(resizeT);
-  resizeT = setTimeout(() => { if (Math.abs(window.innerWidth - lastW) > 30) { lastW = window.innerWidth; const v = document.getElementById('view'); if (v) mountCharts(v); } }, 200);
-});
 
 /* =========================================================
    AUTH SCREEN
@@ -1234,7 +1224,7 @@ async function refreshRewards(force = false) {
   try {
     const before = starsTotal();
     S.rewards = await store.loadRewards();
-    if (starsTotal() !== before && route().name === 'home') render();
+    if (starsTotal() !== before && route().name === 'home' && !document.querySelector('.sheet')) render();
   } catch (e) { console.warn(e); }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshRewards(); });
@@ -1525,7 +1515,6 @@ VIEWS.settings = () => {
         <div class="set-row"><span>${t('week_starts')}</span>${seg('weekStart', [[6, dayName(6, 'short')], [0, dayName(0, 'short')], [1, dayName(1, 'short')]], weekStartDay())}</div>
         <div class="set-row"><span>${t('default_rest')}</span>
           <select class="input select-sm" data-set="rest">${[30, 45, 60, 75, 90, 120, 150, 180, 240, 300].map((s) => `<option value="${s}" ${(P.rest || 90) === s ? 'selected' : ''}>${s} ${t('sec_short')}</option>`).join('')}</select></div>
-        <div class="set-row"><span>${t('height')} (${t('cm')})</span><input class="input input-num" inputmode="numeric" data-set="height" value="${esc(P.height || '')}" placeholder="175"/></div>
       </section>
       <section class="card">
         <div class="card-head"><h3>${t('appearance')}</h3></div>
@@ -1608,7 +1597,7 @@ function previewSheet(id, onChoose) {
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(e))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       ${demoHtml(id)}
-      <p class="muted">${muscleName(e)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
+      <p class="muted">${exMeta(e)}</p>
       <div class="row-actions"><button class="btn btn-ghost" data-sheet-close>${t('close')}</button><button class="btn btn-primary" data-choose>${icon('plus')}${t('choose_ex')}</button></div>
     </div>`, {
     onClose: () => stop(),
@@ -1676,7 +1665,7 @@ function sectionSheet(existing, onSaved) {
         <p class="part-title">3. ${legacy ? t('rename_heads') : t('rows_title')}</p>
         ${legacy ? '' : `<p class="muted small">${t('always_check')} ${t('rows_hint')}</p>`}
         <div class="editor" data-editor></div>
-        ${legacy ? '' : `<details class="tpl-list" data-tpls hidden><summary></summary><div class="tpl-items"></div></details>`}
+        ${legacy ? '' : `<details class="saved-tpls" data-tpls hidden><summary></summary><div class="tpl-items"></div></details>`}
         ${legacy ? '' : `<div class="save-method">
           <button type="button" class="btn btn-ghost btn-sm" data-save-tpl>${icon('plus')}${t('save_method')}</button>
           <p class="muted small">${t('save_method_explain')}</p>
@@ -2021,7 +2010,7 @@ function exerciseSheet(id) {
   openSheet(`<div class="sheet-body">
       <div class="sheet-title"><h3>${esc(exName(e))}</h3><button class="icon-btn" data-sheet-close aria-label="${t('close')}">${icon('x')}</button></div>
       ${demoHtml(id)}
-      <p class="muted">${muscleName(e)} · ${t('eq_' + e.equip)} · ${t('ty_' + (e.type || 'weight'))}</p>
+      <p class="muted">${exMeta(e)}</p>
       ${b.sessions ? `<div class="pr-grid">
         <div><small>${t('sessions')}</small><b>${b.sessions}</b></div>
         <div><small>${t('last_done')}</small><b>${fmtDate(b.last, { day: 'numeric', month: 'short' })}</b></div>
@@ -2286,7 +2275,7 @@ A['ex-menu'] = (el) => {
         <button data-m="up" ${i === 0 ? 'disabled' : ''}>${icon('up')}${t('move_up')}</button>
         <button data-m="down" ${i === list.length - 1 ? 'disabled' : ''}>${icon('down')}${t('move_down')}</button>
         <button data-m="swap">${icon('repeat')}${t('replace_ex')}</button>
-        <button data-m="info">${icon('chart')}${t('ex_details')}</button>
+        <button data-m="info">${icon('info')}${t('ex_details')}</button>
         <button data-m="del" class="danger">${icon('trash')}${t('remove_ex')}</button>
       </div></div>`, {
     onMount: (s, close) => s.addEventListener('click', (ev) => {
@@ -2297,7 +2286,11 @@ A['ex-menu'] = (el) => {
       const m = b.dataset.m;
       if (m === 'up' || m === 'down') { const n = i + (m === 'up' ? -1 : 1); [list[i], list[n]] = [list[n], list[i]]; }
       if (m === 'del') list.splice(i, 1);
-      if (m === 'swap') return exercisePicker((exId) => { e.exId = exId; saveActive(true); render(); }, t('replace_ex'));
+      if (m === 'swap') return exercisePicker((exId) => {
+        // a different way of counting (or a section) gets fresh rows of its own shape
+        if (exType(exId) !== exType(e.exId) || isSection(exType(exId))) e.sets = Array.from({ length: noSets(exId) ? rowCount(exId) : e.sets.length }, (_, j) => blankSet(exId, j));
+        e.exId = exId; saveActive(true); render();
+      }, t('replace_ex'));
       if (m === 'edit') return isSection(exType(e.exId)) ? sectionSheet(getEx(e.exId), () => { syncSections(); saveActive(true); render(); }) : columnsSheet(e.exId, () => render());
       if (m === 'info') return exerciseSheet(e.exId);
       saveActive(true); render();
@@ -2451,12 +2444,11 @@ document.addEventListener('change', (e) => {
   }
   if (el.matches('[data-set]')) {
     const k = el.dataset.set;
-    S.profile[k] = k === 'rest' ? +el.value : k === 'height' ? (num(el.value) || null) : el.value.trim();
+    S.profile[k] = k === 'rest' ? +el.value : el.value.trim();
     saveProfile();
     toast(t('saved'), 'success', 1400);
     if (k === 'name') document.querySelector('.rail .who span') && (document.querySelector('.rail .who span').textContent = S.profile.name);
   }
-  if (el.matches('[data-act-change="prog-ex"]')) go('progress/' + encodeURIComponent(el.value));
   if (el.matches('[data-import]') && el.files[0]) { importJSON(el.files[0]); el.value = ''; }
 });
 
@@ -2534,7 +2526,11 @@ async function boot() {
     S.loaded = false;
     document.getElementById('app').innerHTML = `<div class="splash">${brandMark()}<p>${t('loading')}</p></div>`;
     try {
-      const data = await store.loadAll();
+      const [data, rewards, perms] = await Promise.all([
+        store.loadAll(),
+        starsOn() ? store.loadRewards().catch((err) => { console.warn(err); return []; }) : [],
+        starsOn() ? store.myPerms().catch(() => ({})) : {},
+      ]);
       Object.assign(S, data);
       S.profile = { weeklyGoal: 4, rest: 90, units: 'kg', weekStart: 0, ...(data.profile || {}) };
       if (!S.profile.name && user.displayName) S.profile.name = user.displayName;
@@ -2547,8 +2543,8 @@ async function boot() {
       S.profile.email = user.email || S.profile.email || '';
       S.profile.lastSeen = Date.now();
       saveProfile();
-      S.rewards = starsOn() ? await store.loadRewards().catch((err) => { console.warn(err); return []; }) : [];
-      S.perms = starsOn() ? await store.myPerms().catch(() => ({})) : {};
+      S.rewards = rewards;
+      S.perms = perms;
       loadActive();
       S.loaded = true;
       S.shared = []; S.sharedReady = false;
